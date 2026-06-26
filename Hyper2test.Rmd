@@ -1,0 +1,428 @@
+---
+title: "Hyper2 Test"
+author: "John Wilson"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Hyper2 model for home advantage
+
+Draws are excluded, so the model only compares matches with a winning team.
+
+```{r hyper2-load-packages, message=FALSE, warning=FALSE}
+library(readxl)
+library(dplyr)
+library(hyper2)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r settings}
+options(scipen = 999)
+```
+
+### Load and combine SPFL datasets
+
+```{r hyper2-load-data, message=FALSE, warning=FALSE}
+# Function to load one SPFL season.
+# file = Excel file name.
+# season = season label to add to the dataset.
+# sheet = worksheet name. If left blank, R reads the first sheet.
+
+load_spfl <- function(file, season, sheet = NULL) {
+  
+  # Read the Excel file.
+  # If no sheet is given, read the first sheet by default.
+  if (is.null(sheet)) {
+    data <- read_excel(file)
+  } else {
+    data <- read_excel(file, sheet = sheet)
+  }
+  
+# The pipe operator %>% takes the dataset on the left
+# and passes it into the next function.
+# This keeps only the columns needed for the model
+# and then adds a Season column.
+  data %>%
+    select(`Home Team`, `Away Team`, Result) %>%
+    mutate(Season = season)
+}
+
+# Load each season using the function above.
+# Each dataset is reduced to Home Team, Away Team, Result, and Season.
+
+spfl_2016_2017 <- load_spfl("SPFL 2016-2017.xlsx", "2016/17", "SPFL 2016-2017")
+spfl_2017_2018 <- load_spfl("SPFL 2017-2018.xlsx", "2017/18", "SPFL 2017-2018")
+spfl_2018_2019 <- load_spfl("SPFL 2018-2019.xlsx", "2018/19", "SPFL 2018-2019")
+spfl_2019_2020 <- load_spfl("SPFL 2019-2020.xlsx", "2019/20", "SPFL 2019-2020")
+spfl_2020_2021 <- load_spfl("SPFL 2020-2021.xlsx", "2020/21", "SPFL 2020-2021")
+spfl_2021_2022 <- load_spfl("SPFL 2021-2022.xlsx", "2021/22")
+spfl_2022_2023 <- load_spfl("SPFL 2022-2023.xlsx", "2022/23")
+spfl_2023_2024 <- load_spfl("SPFL 2023-2024.xlsx", "2023/24")
+spfl_2024_2025 <- load_spfl("SPFL 2024-2025.xlsx", "2024/25")
+spfl_2025_2026 <- load_spfl("SPFL 2025-2026.xlsx", "2025/26", "SPFL Dataset")
+
+# Combine each dataset into one larger dataset.
+
+all_matches <- bind_rows(
+  spfl_2016_2017, spfl_2017_2018, spfl_2018_2019, spfl_2019_2020, spfl_2020_2021,
+  spfl_2021_2022, spfl_2022_2023, spfl_2023_2024, spfl_2024_2025, spfl_2025_2026
+)
+```
+
+### Choose dataset for the hyper2 model
+
+The object `spfl_decided` controls which season is analysed. To analyse a different season, I change `spfl_2024_2025` to another season, such as `spfl_2020_2021`, or `all_matches`.
+
+```{r hyper2-select-season}
+# Keep only matches with a winner.
+# Draws are excluded because this Bradley-Terry style model compares winners and losers.
+
+spfl_decided <- spfl_2020_2021 %>%
+  filter(Result %in% c("Home", "Away"))
+
+# Get all team names in the selected dataset.
+# This accounts for different teams appearing in different seasons.
+
+teams <- sort(unique(c(spfl_decided$`Home Team`, spfl_decided$`Away Team`)))
+```
+
+### Build the hyper2 likelihood models
+
+Two models are fitted. The first model estimates team strength only. The second model estimates team strength plus an additional `HomeAdvantage` parameter.
+
+```{r hyper2-build-models}
+# Model 1: team strength only, with no home advantage parameter.
+# Code was inspired from https://journal.r-project.org/articles/RJ-2017-061/
+
+H_no_home <- hyper2(pnames = teams)
+
+# Model 2: team strength plus a home advantage parameter.
+# The HomeAdvantage parameter is treated as an additional strength component
+# added to the home team in the Bradley-Terry likelihood.
+
+H_home <- hyper2(pnames = c(teams, "HomeAdvantage"))
+```
+
+```{r hyper2-build-likelihood}
+# Build both likelihoods match by match.
+# For a match with a winner, the Bradley-Terry style likelihood is:
+#
+# winner strength / total strength of competitors
+#
+# For example, without home advantage:
+# Home win = home / (home + away)
+#
+# With home advantage:
+# Home win = (home + HomeAdvantage) / (home + HomeAdvantage + away)
+# This part was aided by Chatgpt 
+# prompt was; "Use this code: "copy pasted all previous code", to help build 2 models
+# 1 with and 1 without a home advantage component 
+# using the formulae provided by hyper2 (so in this case, home/home+away)
+# and home + homeadv/ home+homeadv+away)"
+# Using addition variant and not multiplication for simplicity
+# Note: Ask Robin whether to stick with addition or change to multiplication
+for (i in 1:nrow(spfl_decided)) {
+  
+  home <- spfl_decided$`Home Team`[i]
+  away <- spfl_decided$`Away Team`[i]
+  result <- spfl_decided$Result[i]
+  
+  if (result == "Home") {
+    
+    # No home advantage model:
+    # Probability = home / (home + away)
+    # Adding +1 puts the winner in the numerator.
+    # Adding -1 to the pair puts both competitors in the denominator.
+    
+    H_no_home[home] <- H_no_home[home] + 1
+    H_no_home[c(home, away)] <- H_no_home[c(home, away)] - 1
+    
+    # Home advantage model:
+    # Probability = (home + HomeAdvantage) /
+    #               (home + HomeAdvantage + away)
+    
+    H_home[c(home, "HomeAdvantage")] <- H_home[c(home, "HomeAdvantage")] + 1
+    H_home[c(home, "HomeAdvantage", away)] <- H_home[c(home, "HomeAdvantage", away)] - 1
+    
+  } else if (result == "Away") {
+    
+    # No home advantage model:
+    # Probability = away / (home + away)
+    
+    H_no_home[away] <- H_no_home[away] + 1
+    H_no_home[c(home, away)] <- H_no_home[c(home, away)] - 1
+    
+    # Home advantage model:
+    # Probability = away / (home + HomeAdvantage + away)
+    
+    H_home[away] <- H_home[away] + 1
+    H_home[c(home, "HomeAdvantage", away)] <- H_home[c(home, "HomeAdvantage", away)] - 1
+  }
+}
+```
+
+### Estimate strengths and compare models
+
+```{r hyper2-estimate-strengths}
+# Estimate team strengths.
+# maxp() is the hyper2 function which estimates the parameters by maximising the likelihood.
+# Code inspired from https://journal.r-project.org/articles/RJ-2017-061/
+
+mle_no_home <- maxp(H_no_home)
+mle_home <- maxp(H_home)
+
+# Show the estimates from each model.
+mle_no_home
+mle_home
+```
+
+```{r hyper2-loglikelihoods}
+# Calculate log-likelihoods for both models.
+
+ll_no_home <- loglik(mle_no_home, H_no_home)
+ll_home <- loglik(mle_home, H_home)
+
+ll_no_home
+ll_home
+```
+
+```{r hyper2-likelihood-ratio-test}
+# Likelihood ratio test.
+# This compares the simpler no-home-advantage model
+# against the model containing the HomeAdvantage parameter.
+# This part was aided by Chatgpt 
+# except the LRT <- max(0,LRT) as I noticed one of the outputs was negative
+
+LRT <- 2 * (ll_home - ll_no_home)
+
+# The LRT should not be negative in theory.
+# This line avoids tiny negative values caused by numerical optimisation.
+
+LRT <- max(0, LRT)
+
+# The home advantage model adds one extra parameter,
+# so the test uses 1 degree of freedom.
+
+p_value <- pchisq(LRT, df = 1, lower.tail = FALSE)
+
+LRT
+p_value
+
+# Home advantage estimate.
+
+mle_home["HomeAdvantage"]
+```
+
+```{r hyper2-results-tables}
+# Main model log-likelihoods.
+# Both are put into data frames just for easier summarising
+
+hyper2_results <- data.frame(
+  Model = c("No home advantage", "With home advantage"),
+  LogLikelihood = c(ll_no_home, ll_home)
+)
+
+hyper2_results
+
+# Final likelihood ratio test result.
+
+lrt_results <- data.frame(
+  LRT = LRT,
+  PValue = p_value,
+  HomeAdvantageEstimate = as.numeric(mle_home["HomeAdvantage"])
+)
+
+lrt_results
+```
+
+### Summary of hyper2 results across seasons
+
+The following table records the results obtained by applying the same hyper2 model to each season individually and to all seasons combined.
+
+```{r hyper2-summary-table}
+hyper2_summary_table <- data.frame(
+  Season = c(
+    "2016/17", "2017/18", "2018/19", "2019/20", "2020/21",
+    "2021/22", "2022/23", "2023/24", "2024/25", "2025/26",
+    "All seasons combined"
+  ),
+  
+  LogLik_NoHomeAdvantage = c(
+    -78.87413, -88.22198, -89.98702, -67.00648, -78.44786,
+    -80.44761, -95.79790, -83.10915, -101.94840, -83.09382,
+    -935.26660
+  ),
+  
+  LogLik_WithHomeAdvantage = c(
+    -77.13478, -87.47995, -89.64439, -64.30464, -78.47971,
+    -77.29277, -89.46608, -79.33752, -99.31951, -80.51791,
+    -916.91210
+  ),
+  
+  LRT = c(
+    3.478705, 1.484053, 0.6852672, 5.40368, 0, 
+    6.309675, 12.5874, 7.543259, 5.25786, 5.151834, 
+    36.70909
+  ),
+  
+  PValue = c(
+    0.06216335, 0.2231415, 0.4077789, 0.02009434, 1,
+    0.01200809, 0.0003883527, 0.0060235, 0.02184779, 0.02322183,
+    1.371382e-09
+  ),
+  
+  HomeAdvantageEstimate = c(
+    4.399408e-06, 0.00553088, 0.004038126, 0.01451093, 0.000001, 
+    0.009031458, 0.01563822, 0.01358, 0.01600478, 0.01387932,
+    0.0111028
+  ),
+  
+  Conclusion = c(
+    "Borderline, not significant", "Not significant", "Not significant",
+    "Significant", "No evidence", "Significant", "Strongly significant",
+    "Significant", "Significant", "Significant", "Very strong evidence"
+  )
+)
+
+hyper2_summary_table
+```
+
+### Interpretation
+
+The hyper2 results show that the model including a `HomeAdvantage` parameter fitted significantly better than the no-home-advantage model for several seasons, including 2019/20, 2021/22, 2022/23, 2023/24, 2024/25 and 2025/26. The all-seasons combined model also provided very strong evidence of home advantage.
+
+In contrast, the 2020/21 COVID-affected season showed no evidence of home advantage, with the estimated `HomeAdvantage` parameter being essentially zero. This supports the idea that home advantage was weaker or absent during the COVID-affected season, although the model excludes draws and should therefore be interpreted as an initial likelihood-based analysis rather than a complete model of all match outcomes.
+
+## Plot
+
+```{r hyper2-team-strength-dotplot, message=FALSE, warning=FALSE}
+# Convert the MLE estimates from the home-advantage model into a data frame
+team_strength_estimates <- data.frame(
+  Team = names(mle_home),
+  StrengthEstimate = as.numeric(mle_home)
+) %>%
+  filter(Team != "HomeAdvantage") %>%
+  arrange(StrengthEstimate)
+
+# Dot plot of team strength estimates
+ggplot(team_strength_estimates,
+       aes(x = StrengthEstimate,
+           y = reorder(Team, StrengthEstimate))) +
+  geom_point(size = 3) +
+  labs(
+    title = "Estimated Team Strengths from Hyper2 Model",
+    x = "Estimated team strength",
+    y = "Team"
+  )
+```
+
+
+
+
+
+```{r hyper2-lrt-plot, message=FALSE, warning=FALSE}
+# Plot only individual seasons, so removing the "All seasons" row
+hyper2_season_table <- hyper2_summary_table %>%
+  filter(Season != "All seasons combined")
+
+# 5% critical value for a chi-square distribution with 1 degree of freedom
+critical_value <- qchisq(0.95, df = 1)
+
+ggplot(hyper2_season_table,
+       aes(x = Season, y = LRT)) +
+  geom_col() +
+  geom_hline(yintercept = critical_value, linetype = "dashed") +
+  labs(
+    title = "Likelihood Ratio Test Statistic by Season",
+    x = "Season",
+    y = "LRT statistic"
+  )
+```
+
+The dashed horizontal line represents the approximate 5% critical value for a chi-square distribution with one degree of freedom. Seasons above this line provide statistically significant evidence that the home-advantage model fitted better than the no-home-advantage model. The 2020/21 season was clearly below this threshold, while the seasons from 2021/22 to 2025/26 were above it.
+
+```{r hyper2-home-advantage-estimate-plot, message=FALSE, warning=FALSE}
+library(ggplot2)
+
+ggplot(hyper2_season_table,
+       aes(x = Season, y = HomeAdvantageEstimate)) +
+  geom_col() +
+  labs(
+    title = "Estimated Home Advantage by Season",
+    x = "Season",
+    y = "HomeAdvantage estimate"
+  )
+```
+
+```{r hyper2-pvalue-plot, message=FALSE, warning=FALSE}
+ggplot(hyper2_season_table,
+       aes(x = Season, y = PValue)) +
+  geom_col() +
+  geom_hline(yintercept = 0.05, linetype = "dashed") +
+  labs(
+    title = "p-values for Hyper2 Home Advantage Test by Season",
+    x = "Season",
+    y = "p-value"
+  )
+```
+
+The p-value plot shows the p-values from the likelihood ratio tests comparing the no-home-advantage hyper2 model with the home-advantage model for each season. The dashed horizontal line represents the 5% significance level. 
+
+The results show that 2019/20 and every season from 2021/22 to 2025/26 had statistically significant evidence of home advantage. In contrast, the 2020/21 COVID-affected season had a p-value of 1, indicating no evidence that the home-advantage model improved fit. This supports the view that home advantage was weaker or absent during the COVID-affected season.
+
+
+# Does champion dominance effect home advantage parameter?
+
+```{r hyper2-home-advantage-dotchart, message=FALSE, warning=FALSE}
+# Dot chart of HomeAdvantage estimates by season
+ggplot(hyper2_season_table,
+       aes(x = HomeAdvantageEstimate,
+           y = reorder(Season, HomeAdvantageEstimate))) +
+  geom_point(size = 3) +
+  labs(
+    title = "Estimated Home Advantage by Season",
+    x = "HomeAdvantage estimate",
+    y = "Season"
+  )
+
+hyper2_summary_table
+
+hyper2_summary_table  # After knitting, I want the summary table on one page
+# So it is cleaner to screenshot for dissertation
+
+champion_margin_table <- data.frame(
+  Season = c(
+    "2016/17", "2017/18", "2018/19", "2019/20", "2020/21",
+    "2021/22", "2022/23", "2023/24", "2024/25", "2025/26"
+  ),
+  ChampionMargin = c(
+    # add the points gap between 1st and 2nd for each season
+    30, 9, 9, 13, 25, 4, 7, 8, 17, 2
+  )
+)
+
+home_advantage_vs_margin <- hyper2_summary_table %>%
+  filter(Season != "All seasons combined") %>%
+  left_join(champion_margin_table, by = "Season")
+
+home_advantage_vs_margin
+
+ggplot(home_advantage_vs_margin,
+       aes(x = ChampionMargin,
+           y = HomeAdvantageEstimate,
+           label = Season)) +
+  geom_point(size = 3) +
+  geom_text(vjust = -0.5, size = 3) +
+  labs(
+    title = "Champion Dominance Compared with Hyper2 Home Advantage",
+    x = "Champion points margin",
+    y = "Home advantage estimate"
+  )
+

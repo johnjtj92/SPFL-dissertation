@@ -1,0 +1,1429 @@
+---
+title: "Preliminary Statistical Testing of SPFL Dataset"
+author: ''
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+The aim is to conduct a preliminary statistical investigation into home advantage in the SPFL. The analysis explores whether home teams win or score more often, whether attendance and away-team travel distance are associated with home wins, and whether disciplinary patterns differ between home and away teams. These tests are exploratory and are used to identify patterns rather than prove causation.
+
+# Load packages and datasets
+
+```{r load-packages-data}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+# Load one season but keep all columns
+load_season <- function(file, season, sheet = NULL) {
+  
+  if (is.null(sheet)) {
+    data <- read_excel(file)
+  } else {
+    data <- read_excel(file, sheet = sheet)
+  }
+  
+  data %>%
+    mutate(Season = season)
+}
+
+# Load each season
+spfl_2016_2017 <- load_season("SPFL 2016-2017.xlsx", "2016/17", "SPFL 2016-2017")
+spfl_2017_2018 <- load_season("SPFL 2017-2018.xlsx", "2017/18", "SPFL 2017-2018")
+spfl_2018_2019 <- load_season("SPFL 2018-2019.xlsx", "2018/19", "SPFL 2018-2019")
+spfl_2019_2020 <- load_season("SPFL 2019-2020.xlsx", "2019/20", "SPFL 2019-2020")
+spfl_2020_2021 <- load_season("SPFL 2020-2021.xlsx", "2020/21", "SPFL 2020-2021")
+spfl_2021_2022 <- load_season("SPFL 2021-2022.xlsx", "2021/22")
+spfl_2022_2023 <- load_season("SPFL 2022-2023.xlsx", "2022/23")
+spfl_2023_2024 <- load_season("SPFL 2023-2024.xlsx", "2023/24")
+spfl_2024_2025 <- load_season("SPFL 2024-2025.xlsx", "2024/25")
+spfl_2025_2026 <- load_season("SPFL 2025-2026.xlsx", "2025/26", "SPFL Dataset")
+
+# Put all seasons into one list
+season_list <- list(
+  "2016/17" = spfl_2016_2017,
+  "2017/18" = spfl_2017_2018,
+  "2018/19" = spfl_2018_2019,
+  "2019/20" = spfl_2019_2020,
+  "2020/21" = spfl_2020_2021,
+  "2021/22" = spfl_2021_2022,
+  "2022/23" = spfl_2022_2023,
+  "2023/24" = spfl_2023_2024,
+  "2024/25" = spfl_2024_2025,
+  "2025/26" = spfl_2025_2026
+)
+```
+
+# Data cleaning/prep
+```{r check-column-names}
+column_names_table <- bind_rows(
+  lapply(names(season_list), function(season_name) {
+    data.frame(
+      Season = season_name,
+      ColumnName = names(season_list[[season_name]])
+    )
+  })
+)
+
+column_names_table
+
+unique_column_names <- sort(unique(unlist(
+  lapply(season_list, names)
+)))
+
+unique_column_names
+```
+
+```{r check-team-names}
+team_names_table <- bind_rows(
+  lapply(names(season_list), function(season_name) {
+    
+    teams <- sort(unique(c(
+      season_list[[season_name]]$`Home Team`,
+      season_list[[season_name]]$`Away Team`
+    )))
+    
+    data.frame(
+      Season = season_name,
+      Team = teams
+    )
+  })
+)
+
+team_names_table
+```
+
+```{r check-all-team-names}
+all_team_names <- sort(unique(team_names_table$Team))
+
+all_team_names
+```
+
+```{r teams-per-season}
+teams_per_season <- team_names_table %>%
+  group_by(Season) %>%
+  summarise(
+    NumberOfTeams = n_distinct(Team),
+    Teams = paste(sort(unique(Team)), collapse = ", "),
+    .groups = "drop"
+  )
+
+teams_per_season
+```
+
+```{r settings}
+options(scipen = 999)
+```
+
+
+# Binomial test: are home wins more common than non-home wins?
+
+A binomial test was used to test whether the proportion of home wins was significantly greater than 0.5. The null hypothesis was that home wins and non-home-wins were equally likely.
+
+```{r binomial-home-wins}
+spfl <- spfl_2025_2026
+home_wins <- sum(spfl$Result == "Home", na.rm = TRUE)
+n_matches <- sum(!is.na(spfl$Result))
+
+home_wins
+n_matches
+
+p_value <- sum(dbinom(home_wins:n_matches, n_matches, 0.5))
+p_value
+```
+
+The p-value was approximately 0.95, which is greater than 0.05. Therefore, the null hypothesis cannot be rejected. There is insufficient evidence to suggest that home wins were more likely than non-home wins.
+
+```{r binomial-home-vs-away}
+home_away_only <- spfl %>% filter(Result %in% c("Home", "Away"))
+
+home_wins <- sum(home_away_only$Result == "Home")
+n_games <- nrow(home_away_only)
+
+binom.test(home_wins, n_games, p = 0.5, alternative = "greater")
+```
+
+When draws were excluded,home teams won 102 of the 167 matches that had a winner. This gives a home-win proportion of approximately 61.1%. The p-value was 0.002592, which is below 0.05, so there is statistically significant evidence that, among matches with a winner, home wins were more common than away wins.
+
+### Visualisation of match outcomes
+
+```{r match-outcome-plot}
+ggplot(spfl, aes(x = Result)) +
+  geom_bar() +
+  labs(
+    title = "Distribution of Match Outcomes",
+    x = "Match Result",
+    y = "Number of Matches"
+  )
+```
+
+```{r match-outcomes-all-seasons, message=FALSE, warning=FALSE}
+# Combine only the columns needed for this plot
+all_seasons_results <- bind_rows(
+  spfl_2016_2017 %>% select(Season, Result),
+  spfl_2017_2018 %>% select(Season, Result),
+  spfl_2018_2019 %>% select(Season, Result),
+  spfl_2019_2020 %>% select(Season, Result),
+  spfl_2020_2021 %>% select(Season, Result),
+  spfl_2021_2022 %>% select(Season, Result),
+  spfl_2022_2023 %>% select(Season, Result),
+  spfl_2023_2024 %>% select(Season, Result),
+  spfl_2024_2025 %>% select(Season, Result),
+  spfl_2025_2026 %>% select(Season, Result)
+)
+
+# Count Home, Away and Draw results for every season
+match_outcomes_by_season <- all_seasons_results %>%
+  filter(Result %in% c("Home", "Away", "Draw")) %>%
+  mutate(
+    Result = factor(Result, levels = c("Home", "Draw", "Away"))
+  ) %>%
+  group_by(Season, Result) %>%
+  summarise(
+    NumberOfMatches = n(),
+    .groups = "drop"
+  )
+
+match_outcomes_by_season
+
+# Plot
+ggplot(match_outcomes_by_season,
+       aes(x = Season,
+           y = NumberOfMatches,
+           fill = Result)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Distribution of Match Outcomes Across SPFL Seasons",
+    x = "Season",
+    y = "Number of matches",
+    fill = "Match result"
+  )
+
+ggplot(match_outcomes_by_season,
+       aes(x = Result,
+           y = NumberOfMatches,
+           fill = Result)) +
+  geom_col() +
+  geom_text(
+    aes(label = NumberOfMatches),
+    vjust = -0.3,
+    size = 3
+  ) +
+  facet_wrap(~ Season) +
+  labs(
+    title = "Distribution of Match Outcomes by Season",
+    subtitle = "SPFL Premiership seasons 2016/17 to 2025/26",
+    x = "Match result",
+    y = "Number of matches",
+    fill = "Match result"
+  )
+```
+
+
+# Paired t-test: do home teams score more goals than away teams?
+
+A paired t-test was used because each match contains a home-goal value and an away-goal value.
+
+```{r paired-ttest-goals}
+t.test(spfl$`Home Goals`,
+       spfl$`Away Goals`,
+       paired = TRUE,
+       alternative = "greater")
+
+mean(spfl$`Home Goals`, na.rm = TRUE)
+mean(spfl$`Away Goals`, na.rm = TRUE)
+```
+
+The p-value was 0.0002699, which is less than 0.05. Therefore, there is sufficient evidence to suggest that home teams scored more goals than away teams.
+
+```{r home-goal-difference-histogram, message=FALSE, warning=FALSE}
+spfl$HomeGoalDifference <- spfl$`Home Goals` - spfl$`Away Goals`
+
+ggplot(spfl, aes(x = HomeGoalDifference)) +
+  geom_histogram(binwidth = 1) +
+  labs(
+    title = "Distribution of Home Goal Difference",
+    x = "Home Goal Difference",
+    y = "Number of Matches"
+  )
+```
+
+```{r home-goal-difference-all-seasons, message=FALSE, warning=FALSE}
+library(readxl)
+library(dplyr)
+
+# Function to load one season and keep the columns needed
+load_goal_difference_data <- function(file, season, sheet = NULL) {
+  
+  if (is.null(sheet)) {
+    data <- read_excel(file)
+  } else {
+    data <- read_excel(file, sheet = sheet)
+  }
+  
+  data %>%
+    select(`Home Team`, `Away Team`, `Home Goals`, `Away Goals`, Result) %>%
+    mutate(Season = season)
+}
+
+# Load each season
+spfl_2016_2017 <- load_goal_difference_data("SPFL 2016-2017.xlsx", "2016/17", "SPFL 2016-2017")
+spfl_2017_2018 <- load_goal_difference_data("SPFL 2017-2018.xlsx", "2017/18", "SPFL 2017-2018")
+spfl_2018_2019 <- load_goal_difference_data("SPFL 2018-2019.xlsx", "2018/19", "SPFL 2018-2019")
+spfl_2019_2020 <- load_goal_difference_data("SPFL 2019-2020.xlsx", "2019/20", "SPFL 2019-2020")
+spfl_2020_2021 <- load_goal_difference_data("SPFL 2020-2021.xlsx", "2020/21", "SPFL 2020-2021")
+spfl_2021_2022 <- load_goal_difference_data("SPFL 2021-2022.xlsx", "2021/22")
+spfl_2022_2023 <- load_goal_difference_data("SPFL 2022-2023.xlsx", "2022/23")
+spfl_2023_2024 <- load_goal_difference_data("SPFL 2023-2024.xlsx", "2023/24")
+spfl_2024_2025 <- load_goal_difference_data("SPFL 2024-2025.xlsx", "2024/25")
+spfl_2025_2026 <- load_goal_difference_data("SPFL 2025-2026.xlsx", "2025/26", "SPFL Dataset")
+
+# Combine all seasons
+all_goal_difference_data <- bind_rows(
+  spfl_2016_2017,
+  spfl_2017_2018,
+  spfl_2018_2019,
+  spfl_2019_2020,
+  spfl_2020_2021,
+  spfl_2021_2022,
+  spfl_2022_2023,
+  spfl_2023_2024,
+  spfl_2024_2025,
+  spfl_2025_2026
+)
+
+# Calculate home goal difference
+all_goal_difference_data <- all_goal_difference_data %>%
+  mutate(
+    HomeGoalDifference = `Home Goals` - `Away Goals`
+  )
+
+# Frequency table of home goal difference by season
+home_goal_difference_all_seasons <- all_goal_difference_data %>%
+  group_by(Season, HomeGoalDifference) %>%
+  summarise(
+    NumberOfMatches = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(Season, HomeGoalDifference)
+
+home_goal_difference_all_seasons
+```
+
+```{r home-goal-difference-all-seasons-plots, message=FALSE, warning=FALSE}
+# Plot home goal difference distribution for all seasons
+ggplot(home_goal_difference_all_seasons,
+       aes(x = HomeGoalDifference,
+           y = NumberOfMatches,
+           colour = Season,
+           group = Season)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Distribution of Home Goal Difference Across SPFL Seasons",
+    x = "Home goal difference",
+    y = "Number of matches",
+    colour = "Season"
+  )
+  
+  ggplot(home_goal_difference_all_seasons,
+       aes(x = HomeGoalDifference, y = NumberOfMatches)) +
+  geom_col() +
+  facet_wrap(~ Season, scales = "free_y") +
+  labs(
+    title = "Distribution of Home Goal Difference by Season",
+    x = "Home goal difference",
+    y = "Number of matches"
+  )
+  
+```
+
+### Visualisation of average home and away goals
+
+```{r home-away-goals-plot}
+average_goals <- data.frame(
+  Team = c("Home", "Away"),
+  Goals = c(
+    mean(spfl$`Home Goals`, na.rm = TRUE),
+    mean(spfl$`Away Goals`, na.rm = TRUE)
+  )
+)
+
+ggplot(average_goals, aes(x = Team, y = Goals)) +
+  geom_col() +
+  labs(
+    title = "Average Goals Scored by Home and Away Teams",
+    x = "Team",
+    y = "Average Goals"
+  )
+```
+
+```{r average-goals-violin-plot, message=FALSE, warning=FALSE}
+goals_long <- data.frame(
+  TeamType = c(rep("Home", nrow(spfl)), rep("Away", nrow(spfl))),
+  Goals = c(spfl$`Home Goals`, spfl$`Away Goals`)
+)
+
+ggplot(goals_long,
+       aes(x = TeamType, y = Goals)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  labs(
+    title = "Distribution of Goals Scored by Home and Away Teams",
+    x = "Team",
+    y = "Goals scored"
+  )
+```
+
+```{r average-goals-all-seasons, message=FALSE, warning=FALSE}
+# Create a long dataset with home and away goals in one column
+average_goals_all_seasons <- data.frame(
+  Season = c(all_goal_difference_data$Season,
+             all_goal_difference_data$Season),
+  Team = c(rep("Home", nrow(all_goal_difference_data)),
+           rep("Away", nrow(all_goal_difference_data))),
+  Goals = c(all_goal_difference_data$`Home Goals`,
+            all_goal_difference_data$`Away Goals`)
+)
+
+# Calculate average goals by season and team type
+average_goals_summary <- average_goals_all_seasons %>%
+  group_by(Season, Team) %>%
+  summarise(
+    AverageGoals = mean(Goals, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+average_goals_summary
+
+# Plot average home and away goals for every season
+ggplot(average_goals_summary,
+       aes(x = Season,
+           y = AverageGoals,
+           fill = Team)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Average Goals Scored by Home and Away Teams Across SPFL Seasons",
+    x = "Season",
+    y = "Average goals",
+    fill = "Team"
+  )
+
+ggplot(average_goals_all_seasons,
+       aes(x = Team,
+           y = Goals,
+           fill = Team)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  facet_wrap(~ Season) +
+  labs(
+    title = "Distribution of Goals Scored by Home and Away Teams Across SPFL Seasons",
+    x = "Team",
+    y = "Goals scored",
+    fill = "Team"
+  )
+```
+
+```{r goals-violin-all-seasons, message=FALSE, warning=FALSE, fig.width=11, fig.height=7}
+ggplot(average_goals_all_seasons,
+       aes(x = Team,
+           y = Goals,
+           fill = Team)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.12, outlier.size = 1) +
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    shape = 18,
+    size = 3,
+    colour = "black"
+  ) +
+  facet_wrap(~ Season, ncol = 4) +
+  labs(
+    title = "Distribution of Goals Scored by Home and Away Teams",
+    subtitle = "SPFL Premiership seasons 2016/17 to 2025/26",
+    x = "Team",
+    y = "Goals scored",
+    fill = "Team"
+  )
+```
+
+# Attendance and match outcome
+
+## Attendance in home wins compared with away wins
+
+```{r attendance-home-away-wins}
+home_win_attendance <- spfl$Attendance[spfl$Result == "Home"]
+away_win_attendance <- spfl$Attendance[spfl$Result == "Away"]
+
+t.test(home_win_attendance, away_win_attendance)
+```
+
+The p-value was 0.000753. Matches won by the home team had significantly higher average attendances than matches won by the away team. However, this does not prove that attendance caused the home win, since larger clubs may both attract higher crowds and win more matches.
+
+The mean attendances were:
+
+```{r attendance-means}
+mean(home_win_attendance, na.rm = TRUE)
+mean(away_win_attendance, na.rm = TRUE)
+```
+
+The mean home-win attendance was approximately 22,724.46, while the mean away-win attendance was approximately 13,741.54.
+
+### Visualisation of attendance by match result
+
+```{r attendance-result-plot}
+ggplot(spfl, aes(x = Result, y = Attendance)) +
+  geom_boxplot() +
+  labs(
+    title = "Attendance by Match Result",
+    x = "Match Result",
+    y = "Attendance"
+  )
+```
+
+## Percent capacity in home wins compared with away wins
+
+```{r capacity-home-away-wins}
+home_win_capacity <- spfl$`Percent Capacity`[spfl$Result == "Home"]
+away_win_capacity <- spfl$`Percent Capacity`[spfl$Result == "Away"]
+
+t.test(home_win_capacity, away_win_capacity)
+```
+
+The p-value was 0.2051, which is greater than 0.05. Therefore, there is insufficient evidence to say that percent capacity differs significantly between home wins and away wins. Unlike raw attendance, percent capacity was not significantly different between home wins and away wins. This suggests that the raw attendance result may partly reflect differences in club size and stadium capacity rather than crowd intensity alone.
+
+The mean percent capacities were:
+
+```{r capacity-means}
+mean(home_win_capacity, na.rm = TRUE)
+mean(away_win_capacity, na.rm = TRUE)
+```
+
+The mean home-win capacity was approximately 0.8029, while the mean away-win capacity was approximately 0.7583.
+
+### Visualisation of percent capacity by match result
+
+```{r capacity-result-plot}
+ggplot(spfl, aes(x = Result, y = `Percent Capacity`)) +
+  geom_boxplot() +
+  labs(
+    title = "Percent Capacity by Match Result",
+    x = "Match Result",
+    y = "Percent Capacity"
+  )
+```
+
+```{r percent-capacity-histogram, message=FALSE, warning=FALSE}
+ggplot(spfl, aes(x = `Percent Capacity`)) +
+  geom_histogram(bins = 20) +
+  labs(
+    title = "Distribution of Percent Capacity",
+    x = "Percent Capacity",
+    y = "Number of Matches"
+  )
+```
+
+# Logistic regression: do percent capacity and travel distance affect the probability of a home win?
+
+A logistic regression model was fitted because `HomeWin` is a binary response variable. The generalised linear model keeps predicted probabilities between 0 and 1.
+
+```{r create-homewin}
+spfl$HomeWin <- ifelse(spfl$Result == "Home", 1,
+                       ifelse(spfl$Result %in% c("Away", "Draw"), 0, NA))
+
+```
+
+```{r logistic-regression}
+logit_model <- glm(HomeWin ~ `Percent Capacity` + `Travel Distance for Away Team`,
+                   data = spfl,
+                   family = "binomial")
+
+summary(logit_model)
+```
+
+Percent capacity had a positive coefficient, with p = 0.0498. Since this is only just below the 5% significance level, it should be interpreted cautiously as borderline evidence that higher percent capacity was associated with increased odds of a home win.
+
+Travel distance was also positive, with beta = 0.00556, but was not statistically significant at the 5% level, p = 0.0936.
+
+### Visualisation of percent capacity and home wins
+
+```{r capacity-homewin-plot}
+ggplot(spfl, aes(x = `Percent Capacity`, y = HomeWin)) +
+  geom_jitter(height = 0.05) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE) +
+  labs(
+    title = "Percent Capacity and Home Wins",
+    x = "Percent Capacity",
+    y = "Home Win: 1 = Yes, 0 = No"
+  )
+```
+
+### Visualisation of travel distance and home wins
+
+```{r distance-homewin-plot}
+ggplot(spfl, aes(x = `Travel Distance for Away Team`, y = HomeWin)) +
+  geom_jitter(height = 0.05) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE) +
+  labs(
+    title = "Travel Distance and Home Wins",
+    x = "Travel Distance for Away Team",
+    y = "Home Win: 1 = Yes, 0 = No"
+  )
+```
+
+# Disciplinary analysis: did away teams receive more cards?
+
+## Yellow cards
+
+```{r yellow-cards-home-away}
+t.test(spfl$`Away Yellow cards`,
+       spfl$`Home Yellow cards`,
+       paired = TRUE,
+       alternative = "greater")
+```
+
+The p-value was 0.001644, which is below 0.05. Therefore, the null hypothesis is rejected. There is statistically significant evidence that away teams received more yellow cards than home teams. Since cards are count data, a Poisson or negative binomial model could be used in a more advanced analysis. However, the paired t-test provides a simple preliminary comparison of home and away disciplinary outcomes within the same matches.
+
+
+### Distribution of yellow cards per match
+```{r separate-yellow-card-frequency}
+home_yellows <- table(spfl$`Home Yellow cards`)
+away_yellows <- table(spfl$`Away Yellow cards`)
+
+home_yellows
+away_yellows
+
+home_yellows_covid <- table(spfl_2020_2021$`Home Yellow cards`)
+away_yellows_covid <- table(spfl_2020_2021$`Away Yellow cards`)
+
+
+```
+
+```{r combined-yellow-card-table}
+yellow_values <- 0:max(
+  spfl$`Home Yellow cards`,
+  spfl$`Away Yellow cards`,
+  na.rm = TRUE
+)
+
+yellow_card_table <- data.frame(
+  YellowCards = yellow_values,
+  Home = as.numeric(table(factor(spfl$`Home Yellow cards`,
+                                 levels = yellow_values))),
+  Away = as.numeric(table(factor(spfl$`Away Yellow cards`,
+                                 levels = yellow_values)))
+)
+
+yellow_card_table
+```
+
+```{r combined-yellow-card-table-covid}
+```{r combined-yellow-card-table-covid}
+# Reload full 2020/21 dataset because yellow-card columns are needed
+spfl_2020_full <- read_excel("SPFL 2020-2021.xlsx", sheet = "SPFL 2020-2021")
+
+# Check exact column names if needed
+names(spfl_2020_full)
+
+# Create yellow card values
+yellow_values_covid <- 0:max(
+  c(
+    spfl_2020_full$`Home Yellow cards`,
+    spfl_2020_full$`Away Yellow cards`
+  ),
+  na.rm = TRUE
+)
+
+# Combined yellow-card table
+yellow_card_table_covid <- data.frame(
+  YellowCards = yellow_values_covid,
+  Home = as.numeric(table(factor(
+    spfl_2020_full$`Home Yellow cards`,
+    levels = yellow_values_covid
+  ))),
+  Away = as.numeric(table(factor(
+    spfl_2020_full$`Away Yellow cards`,
+    levels = yellow_values_covid
+  )))
+)
+
+yellow_card_table_covid
+```
+
+### Visualisation of yellow cards
+
+```{r yellow-card-barplot-covid, message=FALSE, warning=FALSE}
+# Reload the full 2020/21 dataset because yellow-card columns are needed
+spfl_2020_full <- read_excel("SPFL 2020-2021.xlsx", sheet = "SPFL 2020-2021")
+
+yellow_values_covid <- 0:7
+
+home_yellows_covid <- table(
+  factor(spfl_2020_full$`Home Yellow cards`, levels = yellow_values_covid)
+)
+
+away_yellows_covid <- table(
+  factor(spfl_2020_full$`Away Yellow cards`, levels = yellow_values_covid)
+)
+
+barplot(
+  rbind(home_yellows_covid, away_yellows_covid),
+  beside = TRUE,
+  legend.text = c("Home", "Away"),
+  col = c("steelblue", "orange"),
+  main = "Distribution of Yellow Cards for Home and Away Teams: 2020/21",
+  xlab = "Number of Yellow Cards",
+  ylab = "Number of Matches"
+)
+```
+
+```{r yellow-card-barplot}
+yellow_values <- 0:7
+
+home_yellows <- table(factor(spfl$`Home Yellow cards`, levels = yellow_values))
+away_yellows <- table(factor(spfl$`Away Yellow cards`, levels = yellow_values))
+
+barplot(
+  rbind(home_yellows, away_yellows),
+  beside = TRUE,
+  legend.text = c("Home", "Away"),
+  col = c("steelblue", "orange"),
+  main = "Distribution of Yellow Cards for Home and Away Teams for 2025-26",
+  xlab = "Number of Yellow Cards",
+  ylab = "Number of Matches"
+)
+```
+
+```{r yellow-card-reverse-cumulative-diagram, message=FALSE, warning=FALSE}
+yellow_values <- 0:max(
+  spfl$`Home Yellow cards`,
+  spfl$`Away Yellow cards`,
+  na.rm = TRUE
+)
+
+yellow_card_table <- data.frame(
+  YellowCards = yellow_values,
+  Home = as.numeric(table(factor(spfl$`Home Yellow cards`,
+                                 levels = yellow_values))),
+  Away = as.numeric(table(factor(spfl$`Away Yellow cards`,
+                                 levels = yellow_values)))
+)
+
+yellow_card_table
+
+# Reverse cumulative totals:
+# number of matches with at least this many yellow cards
+yellow_reverse_cumulative <- yellow_card_table %>%
+  arrange(desc(YellowCards)) %>%
+  mutate(
+    HomeAtLeast = cumsum(Home),
+    AwayAtLeast = cumsum(Away)
+  ) %>%
+  arrange(YellowCards)
+
+yellow_reverse_cumulative
+
+yellow_reverse_long <- data.frame(
+  YellowCards = rep(yellow_reverse_cumulative$YellowCards, 2),
+  Team = c(rep("Home", nrow(yellow_reverse_cumulative)),
+           rep("Away", nrow(yellow_reverse_cumulative))),
+  MatchesAtLeast = c(yellow_reverse_cumulative$HomeAtLeast,
+                     yellow_reverse_cumulative$AwayAtLeast)
+)
+
+ggplot(yellow_reverse_long,
+       aes(x = YellowCards,
+           y = MatchesAtLeast,
+           group = Team,
+           linetype = Team)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Reverse Cumulative Distribution of Yellow Cards",
+    x = "Number of yellow cards",
+    y = "Number of matches with at least this many yellow cards",
+    linetype = "Team"
+  )
+```
+
+## Red cards
+
+```{r separate-red-card-frequency}
+home_reds <- table(spfl$`Home Red cards`)
+away_reds <- table(spfl$`Away Red cards`)
+
+home_reds
+away_reds
+```
+
+
+```{r red-cards-home-away}
+t.test(spfl$`Away Red cards`,
+       spfl$`Home Red cards`,
+       paired = TRUE,
+       alternative = "greater")
+```
+
+The p-value was 0.7877, so the null hypothesis cannot be rejected. There is insufficient evidence that away teams received more red cards than home teams. Red cards occur much less frequently than yellow cards, so this test should be interpreted cautiously.
+
+### Visualisation of red cards
+
+```{r red-card-barplot}
+red_values <- 0:2
+
+home_reds <- table(factor(spfl$`Home Red cards`, levels = red_values))
+away_reds <- table(factor(spfl$`Away Red cards`, levels = red_values))
+
+barplot(
+  rbind(home_reds, away_reds),
+  beside = TRUE,
+  legend.text = c("Home", "Away"),
+  main = "Distribution of Red Cards for Home and Away Teams",
+  xlab = "Number of Red Cards",
+  ylab = "Number of Matches"
+)
+```
+
+# Team-specific card analysis
+
+The following tests compare total cards received at home and away for the top three teams in the league. These team-specific tests should be interpreted cautiously because they use smaller samples and involve multiple comparisons.
+
+## Rangers
+
+```{r rangers-cards}
+team <- "Rangers"
+
+home_cards <- spfl$`Home Yellow cards`[spfl$`Home Team` == team] +
+  spfl$`Home Red cards`[spfl$`Home Team` == team]
+
+away_cards <- spfl$`Away Yellow cards`[spfl$`Away Team` == team] +
+  spfl$`Away Red cards`[spfl$`Away Team` == team]
+
+mean(home_cards, na.rm = TRUE)
+mean(away_cards, na.rm = TRUE)
+
+t.test(away_cards, home_cards, alternative = "greater")
+```
+
+For Rangers, the p-value was 0.01209, which is below 0.05. Therefore, there is statistically significant evidence that Rangers received more cards away from home than at home.
+
+## Celtic
+
+```{r celtic-cards}
+team <- "Celtic"
+
+home_cards <- spfl$`Home Yellow cards`[spfl$`Home Team` == team] +
+  spfl$`Home Red cards`[spfl$`Home Team` == team]
+
+away_cards <- spfl$`Away Yellow cards`[spfl$`Away Team` == team] +
+  spfl$`Away Red cards`[spfl$`Away Team` == team]
+
+mean(home_cards, na.rm = TRUE)
+mean(away_cards, na.rm = TRUE)
+
+t.test(away_cards, home_cards, alternative = "greater")
+```
+
+For Celtic, the p-value was 0.3532, which is greater than 0.05. Therefore, there is insufficient evidence that Celtic received more cards away from home than at home.
+
+## Hearts
+
+```{r hearts-cards}
+team <- "Hearts"
+
+home_cards <- spfl$`Home Yellow cards`[spfl$`Home Team` == team] +
+  spfl$`Home Red cards`[spfl$`Home Team` == team]
+
+away_cards <- spfl$`Away Yellow cards`[spfl$`Away Team` == team] +
+  spfl$`Away Red cards`[spfl$`Away Team` == team]
+
+mean(home_cards, na.rm = TRUE)
+mean(away_cards, na.rm = TRUE)
+
+t.test(away_cards, home_cards, alternative = "greater")
+```
+
+For Hearts, the p-value was 0.02941, which is below 0.05. Therefore, there is statistically significant evidence that Hearts received more cards away from home than at home.
+
+### Visualisation of team-specific card averages
+
+```{r team-card-averages-plot}
+teams <- c("Rangers", "Celtic", "Hearts")
+
+home_avg <- c(
+  mean(spfl$`Home Yellow cards`[spfl$`Home Team` == "Rangers"] + spfl$`Home Red cards`[spfl$`Home Team` == "Rangers"], na.rm = TRUE),
+  mean(spfl$`Home Yellow cards`[spfl$`Home Team` == "Celtic"] + spfl$`Home Red cards`[spfl$`Home Team` == "Celtic"], na.rm = TRUE),
+  mean(spfl$`Home Yellow cards`[spfl$`Home Team` == "Hearts"] + spfl$`Home Red cards`[spfl$`Home Team` == "Hearts"], na.rm = TRUE)
+)
+
+away_avg <- c(
+  mean(spfl$`Away Yellow cards`[spfl$`Away Team` == "Rangers"] + spfl$`Away Red cards`[spfl$`Away Team` == "Rangers"], na.rm = TRUE),
+  mean(spfl$`Away Yellow cards`[spfl$`Away Team` == "Celtic"] + spfl$`Away Red cards`[spfl$`Away Team` == "Celtic"], na.rm = TRUE),
+  mean(spfl$`Away Yellow cards`[spfl$`Away Team` == "Hearts"] + spfl$`Away Red cards`[spfl$`Away Team` == "Hearts"], na.rm = TRUE)
+)
+
+barplot(
+  rbind(home_avg, away_avg),
+  beside = TRUE,
+  names.arg = teams,
+  legend.text = c("Home", "Away"),
+  main = "Average Cards at Home and Away",
+  ylab = "Average Cards"
+)
+```
+
+# Comparing 2025/26 with the 2020/21 COVID season
+
+The 2020/21 season was affected by COVID restrictions, meaning crowds were absent or heavily restricted for much of the season. This section compares disciplinary differences between the two seasons.
+
+
+## Total card difference
+
+The card difference is defined as:
+
+\[
+\text{Card Difference} = \text{Away Cards} - \text{Home Cards}
+\]
+
+```{r card-difference, message=FALSE, warning=FALSE}
+# Reload full datasets because card columns are needed
+spfl <- read_excel("SPFL 2025-2026.xlsx", sheet = "SPFL Dataset")
+spfl_2020 <- read_excel("SPFL 2020-2021.xlsx", sheet = "SPFL 2020-2021")
+
+# 2025/26 total card difference
+# Positive value means the away team received more cards than the home team
+spfl <- spfl %>%
+  mutate(
+    CardDifference = (`Away Yellow cards` + `Away Red cards`) -
+                     (`Home Yellow cards` + `Home Red cards`)
+  )
+
+# 2020/21 total card difference
+spfl_2020 <- spfl_2020 %>%
+  mutate(
+    CardDifference = (`Away Yellow cards` + `Away Red cards`) -
+                     (`Home Yellow cards` + `Home Red cards`)
+  )
+
+# Mean card difference for each season
+mean(spfl$CardDifference, na.rm = TRUE)
+mean(spfl_2020$CardDifference, na.rm = TRUE)
+```
+
+```{r card-difference-test}
+t.test(spfl$CardDifference,
+       spfl_2020$CardDifference,
+       alternative = "greater")
+```
+
+The p-value was 0.03157. In 2025/26, away teams received about 0.33 more cards than home teams per match on average. In 2020/21, the difference was almost zero. This suggests that the disciplinary gap between away and home teams was larger in 2025/26. A positive value means away teams received more cards than home teams.
+
+There is statistically significant evidence that away teams received more cards relative to home teams in the 2025/26 season than in the 2020/21 season. This may suggest that the presence of crowds is associated with a larger disciplinary gap between home and away teams, although other differences between seasons may also have contributed.
+
+### Visualisation of card difference by season
+
+```{r card-difference-season-plot}
+boxplot(
+  spfl$CardDifference,
+  spfl_2020$CardDifference,
+  names = c("2025/26", "2020/21"),
+  main = "Card Difference by Season",
+  ylab = "Away Cards - Home Cards"
+)
+```
+
+# Rangers home performance: 2025/26 compared with 2020/21
+
+Rangers had the highest percent capacity in 2025/26. This section compares Rangers’ home performance in 2025/26 with their home performance during the 2020/21 COVID-affected season. The comparison is exploratory, since differences may reflect wider changes in team strength, opposition strength, squad quality, and season context.
+
+```{r rangers-home-data}
+rangers_2025_home <- spfl[spfl$`Home Team` == "Rangers", ]
+rangers_2020_home <- spfl_2020[spfl_2020$`Home Team` == "Rangers", ]
+```
+
+## Rangers home win rate
+
+```{r rangers-home-win-rate}
+rangers_table <- matrix(
+  c(
+    sum(rangers_2020_home$Result == "Home"),
+    sum(rangers_2020_home$Result != "Home"),
+    sum(rangers_2025_home$Result == "Home"),
+    sum(rangers_2025_home$Result != "Home")
+  ),
+  nrow = 2,
+  byrow = TRUE
+)
+
+fisher.test(rangers_table, alternative = "greater")
+```
+
+Fisher’s Exact Test gave a p-value of 0.001546, suggesting statistically significant evidence that Rangers’ home win rate was higher in 2020/21 than in 2025/26. However, this should not be interpreted as evidence that empty stadiums improved Rangers’ performance, because the two seasons differed in many other ways.
+
+### Visualisation of Rangers home win rate
+
+```{r rangers-home-win-rate-plot}
+rangers_2020_wins <- sum(rangers_2020_home$Result == "Home")
+rangers_2025_wins <- sum(rangers_2025_home$Result == "Home")
+
+rangers_2020_games <- nrow(rangers_2020_home)
+rangers_2025_games <- nrow(rangers_2025_home)
+
+rangers_win_rates <- c(
+  rangers_2020_wins / rangers_2020_games,
+  rangers_2025_wins / rangers_2025_games
+)
+
+barplot(
+  rangers_win_rates,
+  names.arg = c("2020/21", "2025/26"),
+  main = "Rangers Home Win Rate",
+  ylab = "Home Win Rate",
+  ylim = c(0, 1)
+)
+```
+## Rangers home goal difference
+
+Home goal difference is defined as:
+
+\[
+\text{Home Goal Difference} = \text{Home Goals} - \text{Away Goals}
+\]
+
+```{r rangers-home-goal-difference}
+rangers_2025_home$HomeGoalDifference <- rangers_2025_home$`Home Goals` - rangers_2025_home$`Away Goals`
+rangers_2020_home$HomeGoalDifference <- rangers_2020_home$`Home Goals` - rangers_2020_home$`Away Goals`
+
+mean(rangers_2025_home$HomeGoalDifference, na.rm = TRUE)
+mean(rangers_2020_home$HomeGoalDifference, na.rm = TRUE)
+```
+
+```{r rangers-home-goal-difference-test}
+t.test(rangers_2020_home$HomeGoalDifference,
+       rangers_2025_home$HomeGoalDifference,
+       alternative = "greater")
+```
+
+Rangers had a mean home goal difference of 2.79 in 2020/21, compared with 0.95 in 2025/26. The Welch two-sample t-test gave a p-value of 0.0007542, suggesting statistically significant evidence that Rangers’ average home goal difference was higher in 2020/21. However, this may reflect wider differences in team strength, opposition strength, squad quality, or season context, rather than crowd effects alone.
+
+
+### Visualisation of Rangers home goal difference
+
+```{r rangers-goal-difference-plot}
+boxplot(
+  rangers_2020_home$HomeGoalDifference,
+  rangers_2025_home$HomeGoalDifference,
+  names = c("2020/21", "2025/26"),
+  main = "Rangers Home Goal Difference",
+  ylab = "Home Goal Difference"
+)
+```
+
+```{r rangers-home-goal-difference-distribution}
+# Home goal difference for Rangers home matches in each season
+rangers_2025_home <- rangers_2025_home %>%
+  mutate(
+    HomeGoalDifference = `Home Goals` - `Away Goals`,
+    Season = "2025/26"
+  )
+
+rangers_2020_home <- rangers_2020_home %>%
+  mutate(
+    HomeGoalDifference = `Home Goals` - `Away Goals`,
+    Season = "2020/21"
+  )
+
+# Combine both seasons
+rangers_home_gd <- bind_rows(
+  rangers_2020_home %>% select(Season, HomeGoalDifference),
+  rangers_2025_home %>% select(Season, HomeGoalDifference)
+)
+
+# Frequency table
+rangers_home_gd_table <- rangers_home_gd %>%
+  group_by(Season, HomeGoalDifference) %>%
+  summarise(
+    NumberOfMatches = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(Season, HomeGoalDifference)
+
+rangers_home_gd_table
+```
+
+```{r rangers-home-goal-difference-comparison-plot, message=FALSE, warning=FALSE}
+# Make sure both seasons have all goal-difference values included,
+# even if one season had 0 matches at that value.
+
+all_goal_differences <- sort(unique(rangers_home_gd_table$HomeGoalDifference))
+
+full_rangers_gd_table <- expand.grid(
+  Season = c("2020/21", "2025/26"),
+  HomeGoalDifference = all_goal_differences
+) %>%
+  left_join(
+    rangers_home_gd_table,
+    by = c("Season", "HomeGoalDifference")
+  ) %>%
+  mutate(
+    NumberOfMatches = ifelse(is.na(NumberOfMatches), 0, NumberOfMatches)
+  )
+
+ggplot(full_rangers_gd_table,
+       aes(x = factor(HomeGoalDifference),
+           y = NumberOfMatches,
+           fill = Season)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Distribution of Rangers Home Goal Difference",
+    x = "Home goal difference",
+    y = "Number of matches",
+    fill = "Season"
+  )
+```
+
+```{r rangers-home-goal-difference-line-plot, message=FALSE, warning=FALSE}
+# Make sure both seasons have all goal-difference values included,
+# even if one season had 0 matches at that value.
+
+all_goal_differences <- seq(
+  min(rangers_home_gd_table$HomeGoalDifference),
+  max(rangers_home_gd_table$HomeGoalDifference),
+  by = 1
+)
+
+full_rangers_gd_table <- expand.grid(
+  Season = c("2020/21", "2025/26"),
+  HomeGoalDifference = all_goal_differences
+) %>%
+  left_join(
+    rangers_home_gd_table,
+    by = c("Season", "HomeGoalDifference")
+  ) %>%
+  mutate(
+    NumberOfMatches = ifelse(is.na(NumberOfMatches), 0, NumberOfMatches)
+  )
+
+ggplot(full_rangers_gd_table,
+       aes(x = HomeGoalDifference,
+           y = NumberOfMatches,
+           group = Season,
+           linetype = Season)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Distribution of Rangers Home Goal Difference",
+    x = "Home goal difference",
+    y = "Number of matches",
+    linetype = "Season"
+  )
+
+```
+# Home and Away wins from 2016-2026 comparison
+
+
+```{r home-away-wins-2016-2026, message=FALSE, warning=FALSE}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+# Function to load one season and keep only the Result column
+load_results <- function(file, season, sheet = NULL) {
+  
+  if (is.null(sheet)) {
+    data <- read_excel(file)
+  } else {
+    data <- read_excel(file, sheet = sheet)
+  }
+  
+  data %>%
+    select(Result) %>%
+    mutate(Season = season)
+}
+
+# Load each season
+spfl_2016_2017 <- load_results("SPFL 2016-2017.xlsx", "2016/17", "SPFL 2016-2017")
+spfl_2017_2018 <- load_results("SPFL 2017-2018.xlsx", "2017/18", "SPFL 2017-2018")
+spfl_2018_2019 <- load_results("SPFL 2018-2019.xlsx", "2018/19", "SPFL 2018-2019")
+spfl_2019_2020 <- load_results("SPFL 2019-2020.xlsx", "2019/20", "SPFL 2019-2020")
+spfl_2020_2021 <- load_results("SPFL 2020-2021.xlsx", "2020/21", "SPFL 2020-2021")
+spfl_2021_2022 <- load_results("SPFL 2021-2022.xlsx", "2021/22")
+spfl_2022_2023 <- load_results("SPFL 2022-2023.xlsx", "2022/23")
+spfl_2023_2024 <- load_results("SPFL 2023-2024.xlsx", "2023/24")
+spfl_2024_2025 <- load_results("SPFL 2024-2025.xlsx", "2024/25")
+spfl_2025_2026 <- load_results("SPFL 2025-2026.xlsx", "2025/26", "SPFL Dataset")
+
+# Combine all seasons into one dataset
+all_seasons_results <- bind_rows(
+  spfl_2016_2017,
+  spfl_2017_2018,
+  spfl_2018_2019,
+  spfl_2019_2020,
+  spfl_2020_2021,
+  spfl_2021_2022,
+  spfl_2022_2023,
+  spfl_2023_2024,
+  spfl_2024_2025,
+  spfl_2025_2026
+)
+
+all_seasons_results
+
+
+# Count home wins and away wins only, excluding draws
+home_away_wins <- all_seasons_results %>%
+  filter(Result %in% c("Home", "Away")) %>%
+  group_by(Season, Result) %>%
+  summarise(NumberOfMatches = n(), .groups = "drop")
+
+home_away_wins
+
+# Bar plot
+ggplot(home_away_wins,
+       aes(x = Season, y = NumberOfMatches, fill = Result)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Home Wins Compared with Away Wins Across SPFL Seasons",
+    x = "Season",
+    y = "Number of Matches",
+    fill = "Result"
+  )
+```
+
+```{r home-away-summary-2016-2026}
+home_advantage_summary <- home_away_wins %>%
+  group_by(Season) %>%
+  summarise(
+    HomeWins = NumberOfMatches[Result == "Home"],
+    AwayWins = NumberOfMatches[Result == "Away"],
+    TotalDecidedGames = HomeWins + AwayWins,
+    HomeWinPercentage = HomeWins / TotalDecidedGames,
+    Difference = HomeWins - AwayWins,
+    .groups = "drop"
+  )
+
+home_advantage_summary
+
+# Do teams receive more cards away at Rangers/Celtc?
+
+```{r away-cards-at-old-firm}
+spfl$BigClub <- ifelse(spfl$`Home Team` %in% c("Rangers", "Celtic"), 
+                       "Rangers/Celtic", 
+                       "Other teams")
+
+spfl$AwayTotalCards <- spfl$`Away Yellow cards` + spfl$`Away Red cards`
+
+t.test(AwayTotalCards ~ BigClub, data = spfl)
+
+ggplot(spfl, aes(x = BigClub, y = AwayTotalCards)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.5) +
+  labs(
+    title = "Away-Team Cards at Rangers/Celtic Compared with Other Teams",
+    x = "Home Team Group",
+    y = "Away-Team Total Cards"
+  )
+```
+
+# Key Match incident(KMI) data for 2024-25, 2025-26
+
+```{r kmi-team-group-comparison, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+
+# 2024/25 Key Match Incident data
+kmi_2024_2025 <- data.frame(
+  Season = "2024/25",
+  Team = c("Celtic", "Rangers", "Hibernian", "Dundee United",
+           "Aberdeen", "St Mirren", "Hearts", "Motherwell",
+           "Kilmarnock", "Dundee", "Ross County", "St Johnstone"),
+  DecisionsFor = c(3, 2, 4, 3, 1, 4, 1, 2, 1, 1, 3, 3),
+  DecisionsAgainst = c(2, 5, 0, 2, 1, 5, 4, 3, 4, 0, 2, 0)
+)
+
+# 2025/26 KMI data
+kmi_2025_2026 <- data.frame(
+  Season = "2025/26",
+  Team = c("Celtic", "Hearts", "Rangers", "Motherwell",
+           "Hibernian", "Falkirk", "Dundee United", "Dundee",
+           "Aberdeen", "Kilmarnock", "St Mirren", "Livingston"),
+  DecisionsFor = c(2, 1, 1, 2, 1, 3, 0, 0, 0, 2, 2, 3),
+  DecisionsAgainst = c(1, 1, 3, 4, 1, 0, 1, 1, 1, 0, 3, 1)
+)
+
+# Combine both seasons into a single dataset
+kmi_all <- bind_rows(kmi_2024_2025, kmi_2025_2026)
+
+
+# KMI for every team
+
+```{r kmi-all-teams-table}
+kmi_all <- bind_rows(kmi_2024_2025, kmi_2025_2026)
+
+kmi_all_teams <- kmi_all %>%
+  group_by(Team) %>%
+  summarise(
+    TotalFor = sum(DecisionsFor, na.rm = TRUE),
+    TotalAgainst = sum(DecisionsAgainst, na.rm = TRUE),
+    NetDifferential = TotalFor - TotalAgainst,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(NetDifferential))
+
+kmi_all_teams
+
+chisq.test(kmi_all_teams$TotalAgainst)
+```
+
+```{r kmi-all-teams-plot}
+ggplot(kmi_all_teams,
+       aes(x = reorder(Team, NetDifferential),
+           y = NetDifferential)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Net Differential of Incorrect KMI Decisions by Team",
+    x = "Team",
+    y = "Net Differential: Decisions For - Decisions Against"
+  )
+```
+
+```{r kmi-team-against-fisher-tests}
+team_tests <- data.frame()
+
+for (team_name in kmi_all_teams$Team) {
+  
+  team_for <- kmi_all_teams$TotalFor[kmi_all_teams$Team == team_name]
+  team_against <- kmi_all_teams$TotalAgainst[kmi_all_teams$Team == team_name]
+  
+  other_for <- sum(kmi_all_teams$TotalFor[kmi_all_teams$Team != team_name])
+  other_against <- sum(kmi_all_teams$TotalAgainst[kmi_all_teams$Team != team_name])
+  
+  test_table <- matrix(
+    c(team_against, team_for,
+      other_against, other_for),
+    nrow = 2,
+    byrow = TRUE
+  )
+  
+  rownames(test_table) <- c(team_name, "Other teams")
+  colnames(test_table) <- c("Against", "For")
+  
+  test <- fisher.test(test_table, alternative = "greater")
+  
+  team_tests <- rbind(
+    team_tests,
+    data.frame(
+      Team = team_name,
+      TotalFor = team_for,
+      TotalAgainst = team_against,
+      NetDifferential = team_for - team_against,
+      PValue = test$p.value
+    )
+  )
+}
+
+# Adjust p-values because several teams are tested
+team_tests <- team_tests %>%
+  mutate(
+    AdjustedPValue = p.adjust(PValue, method = "holm")
+  ) %>%
+  arrange(PValue)
+
+team_tests
+```
+
+```{r kmi-binomial-tests}
+# Create team totals
+kmi_all_teams <- kmi_all %>%
+  group_by(Team) %>%
+  summarise(
+    TotalFor = sum(DecisionsFor, na.rm = TRUE),
+    TotalAgainst = sum(DecisionsAgainst, na.rm = TRUE),
+    TotalDecisions = TotalFor + TotalAgainst,
+    NetDifferential = TotalFor - TotalAgainst,
+    .groups = "drop"
+  )
+
+# Binomial test for each team
+# Tests whether decisions against differ from 50% of all decisions
+kmi_binomial_tests <- kmi_all_teams %>%
+  rowwise() %>%
+  mutate(
+    PValue = binom.test(
+      x = TotalAgainst,
+      n = TotalDecisions,
+      p = 0.5,
+      alternative = "two.sided"
+    )$p.value
+  ) %>%
+  ungroup() %>%
+  mutate(
+    AdjustedPValue = p.adjust(PValue, method = "holm")
+  ) %>%
+  arrange(PValue)
+
+kmi_binomial_tests
+```
+
+```{r kmi-binomial-tests-more-against}
+kmi_binomial_against_tests <- kmi_all_teams %>%
+  rowwise() %>%
+  mutate(
+    PValue = binom.test(
+      x = TotalAgainst,
+      n = TotalDecisions,
+      p = 0.5,
+      alternative = "greater"
+    )$p.value
+  ) %>%
+  ungroup() %>%
+  mutate(
+    AdjustedPValue = p.adjust(PValue, method = "holm")
+  ) %>%
+  arrange(PValue)
+
+kmi_binomial_against_tests
+```
+
+# Additional visuals/tests
+
+### Q-Q plot for yellow-card differences
+
+```{r yellow-card-qq-plot}
+# Difference in yellow cards: away minus home
+spfl$YellowCardDifference <- spfl$`Away Yellow cards` - spfl$`Home Yellow cards`
+
+# Q-Q plot
+qqnorm(spfl$YellowCardDifference,
+       main = "Q-Q Plot of Yellow Card Differences")
+
+qqline(spfl$YellowCardDifference)
+```
+
+
+### Wilcoxon signed-rank test for yellow cards
+
+```{r yellow-card-wilcox}
+wilcox.test(spfl$`Away Yellow cards`,
+            spfl$`Home Yellow cards`,
+            paired = TRUE,
+            alternative = "greater")
+```
+
+
+
