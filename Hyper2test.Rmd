@@ -84,7 +84,7 @@ The object `spfl_decided` controls which season is analysed. To analyse a differ
 # Keep only matches with a winner.
 # Draws are excluded because this Bradley-Terry style model compares winners and losers.
 
-spfl_decided <- spfl_2020_2021 %>%
+spfl_decided <- all_matches %>%
   filter(Result %in% c("Home", "Away"))
 
 # Get all team names in the selected dataset.
@@ -247,6 +247,9 @@ lrt_results
 The following table records the results obtained by applying the same hyper2 model to each season individually and to all seasons combined.
 
 ```{r hyper2-summary-table}
+# Create a summary table containing the hyper2 results for each season.
+# These values were obtained by running the same model separately
+# for each individual season and once for all seasons combined.
 hyper2_summary_table <- data.frame(
   Season = c(
     "2016/17", "2017/18", "2018/19", "2019/20", "2020/21",
@@ -254,36 +257,43 @@ hyper2_summary_table <- data.frame(
     "All seasons combined"
   ),
   
+  # Log-likelihood values for the model without a home-advantage parameter.
   LogLik_NoHomeAdvantage = c(
     -78.87413, -88.22198, -89.98702, -67.00648, -78.44786,
     -80.44761, -95.79790, -83.10915, -101.94840, -83.09382,
     -935.26660
   ),
   
+  # Log-likelihood values for the model containing the HomeAdvantage parameter.
   LogLik_WithHomeAdvantage = c(
     -77.13478, -87.47995, -89.64439, -64.30464, -78.47971,
     -77.29277, -89.46608, -79.33752, -99.31951, -80.51791,
     -916.91210
   ),
   
+  # Likelihood ratio test statistics comparing the two models.
   LRT = c(
     3.478705, 1.484053, 0.6852672, 5.40368, 0, 
     6.309675, 12.5874, 7.543259, 5.25786, 5.151834, 
     36.70909
   ),
   
+  # p-values from the likelihood ratio tests.
   PValue = c(
     0.06216335, 0.2231415, 0.4077789, 0.02009434, 1,
     0.01200809, 0.0003883527, 0.0060235, 0.02184779, 0.02322183,
     1.371382e-09
   ),
   
+  # Estimated value of the HomeAdvantage parameter from the model.
   HomeAdvantageEstimate = c(
     4.399408e-06, 0.00553088, 0.004038126, 0.01451093, 0.000001, 
     0.009031458, 0.01563822, 0.01358, 0.01600478, 0.01387932,
     0.0111028
   ),
   
+  # Written interpretation of whether each season showed evidence
+  # of home advantage based on the p-value.
   Conclusion = c(
     "Borderline, not significant", "Not significant", "Not significant",
     "Significant", "No evidence", "Significant", "Strongly significant",
@@ -291,6 +301,7 @@ hyper2_summary_table <- data.frame(
   )
 )
 
+# Display the final hyper2 summary table.
 hyper2_summary_table
 ```
 
@@ -303,15 +314,20 @@ In contrast, the 2020/21 COVID-affected season showed no evidence of home advant
 ## Plot
 
 ```{r hyper2-team-strength-dotplot, message=FALSE, warning=FALSE}
-# Convert the MLE estimates from the home-advantage model into a data frame
+# Convert the MLE estimates from the home-advantage model into a data frame.
+# This allows the estimated team strengths to be plotted using ggplot.
 team_strength_estimates <- data.frame(
   Team = names(mle_home),
   StrengthEstimate = as.numeric(mle_home)
 ) %>%
+  
+  # Remove the HomeAdvantage parameter because this plot only shows teams.
   filter(Team != "HomeAdvantage") %>%
+  
+  # Order teams by estimated strength.
   arrange(StrengthEstimate)
 
-# Dot plot of team strength estimates
+# Produce a dot plot of estimated team strengths from the hyper2 model.
 ggplot(team_strength_estimates,
        aes(x = StrengthEstimate,
            y = reorder(Team, StrengthEstimate))) +
@@ -328,16 +344,21 @@ ggplot(team_strength_estimates,
 
 
 ```{r hyper2-lrt-plot, message=FALSE, warning=FALSE}
-# Plot only individual seasons, so removing the "All seasons" row
+# Remove the all-seasons combined row so that the plot only compares
+# individual seasons.
 hyper2_season_table <- hyper2_summary_table %>%
   filter(Season != "All seasons combined")
 
-# 5% critical value for a chi-square distribution with 1 degree of freedom
+# Calculate the 5% critical value for a chi-square distribution
+# with 1 degree of freedom.
 critical_value <- qchisq(0.95, df = 1)
 
+# Produce a bar chart of the likelihood ratio test statistic by season.
 ggplot(hyper2_season_table,
        aes(x = Season, y = LRT)) +
   geom_col() +
+  
+  # Add a dashed reference line showing the 5% significance threshold.
   geom_hline(yintercept = critical_value, linetype = "dashed") +
   labs(
     title = "Likelihood Ratio Test Statistic by Season",
@@ -349,8 +370,8 @@ ggplot(hyper2_season_table,
 The dashed horizontal line represents the approximate 5% critical value for a chi-square distribution with one degree of freedom. Seasons above this line provide statistically significant evidence that the home-advantage model fitted better than the no-home-advantage model. The 2020/21 season was clearly below this threshold, while the seasons from 2021/22 to 2025/26 were above it.
 
 ```{r hyper2-home-advantage-estimate-plot, message=FALSE, warning=FALSE}
-library(ggplot2)
-
+# Plot the estimated HomeAdvantage parameter for each individual season.
+# Higher values indicate a stronger estimated home-advantage effect.
 ggplot(hyper2_season_table,
        aes(x = Season, y = HomeAdvantageEstimate)) +
   geom_col() +
@@ -362,9 +383,13 @@ ggplot(hyper2_season_table,
 ```
 
 ```{r hyper2-pvalue-plot, message=FALSE, warning=FALSE}
+# Produce a bar chart showing the p-value from the likelihood ratio test
+# for each season.
 ggplot(hyper2_season_table,
        aes(x = Season, y = PValue)) +
   geom_col() +
+  
+  # Add a dashed line at p = 0.05 to show the usual significance level.
   geom_hline(yintercept = 0.05, linetype = "dashed") +
   labs(
     title = "p-values for Hyper2 Home Advantage Test by Season",
@@ -378,10 +403,12 @@ The p-value plot shows the p-values from the likelihood ratio tests comparing th
 The results show that 2019/20 and every season from 2021/22 to 2025/26 had statistically significant evidence of home advantage. In contrast, the 2020/21 COVID-affected season had a p-value of 1, indicating no evidence that the home-advantage model improved fit. This supports the view that home advantage was weaker or absent during the COVID-affected season.
 
 
-# Does champion dominance effect home advantage parameter?
+# Does champion dominance affect home advantage parameter?
 
 ```{r hyper2-home-advantage-dotchart, message=FALSE, warning=FALSE}
-# Dot chart of HomeAdvantage estimates by season
+# Produce a dot chart of HomeAdvantage estimates by season.
+# This provides another way to compare the estimated strength of home advantage
+# across seasons.
 ggplot(hyper2_season_table,
        aes(x = HomeAdvantageEstimate,
            y = reorder(Season, HomeAdvantageEstimate))) +
@@ -392,37 +419,44 @@ ggplot(hyper2_season_table,
     y = "Season"
   )
 
+# Display the summary table again so that it can be viewed alongside the plot.
 hyper2_summary_table
 
-hyper2_summary_table  # After knitting, I want the summary table on one page
-# So it is cleaner to screenshot for dissertation
-
+# Create a table showing the points gap between the league champion
+# and the second-placed team in each season.
 champion_margin_table <- data.frame(
   Season = c(
     "2016/17", "2017/18", "2018/19", "2019/20", "2020/21",
     "2021/22", "2022/23", "2023/24", "2024/25", "2025/26"
   ),
   ChampionMargin = c(
-    # add the points gap between 1st and 2nd for each season
     30, 9, 9, 13, 25, 4, 7, 8, 17, 2
   )
 )
 
+# Join the champion-margin data onto the hyper2 summary table.
+# This allows the home-advantage estimate to be compared with how dominant
+# the league champion was in each season.
 home_advantage_vs_margin <- hyper2_summary_table %>%
   filter(Season != "All seasons combined") %>%
   left_join(champion_margin_table, by = "Season")
 
+# Display the combined table.
 home_advantage_vs_margin
 
+# Produce a scatter plot comparing champion dominance with the estimated
+# home-advantage parameter.
 ggplot(home_advantage_vs_margin,
        aes(x = ChampionMargin,
            y = HomeAdvantageEstimate,
            label = Season)) +
   geom_point(size = 3) +
+  
+  # Add season labels next to each point.
   geom_text(vjust = -0.5, size = 3) +
   labs(
     title = "Champion Dominance Compared with Hyper2 Home Advantage",
     x = "Champion points margin",
     y = "Home advantage estimate"
   )
-
+```

@@ -416,14 +416,21 @@ ggplot(goals_long,
 ```
 
 ```{r average-goals-all-seasons, message=FALSE, warning=FALSE}
-# Create a long dataset with home and away goals in one column
+# Create a long-format dataset with home and away goals in one column.
+# This structure makes it easier to compare home and away goals across seasons.
 average_goals_all_seasons <- data.frame(
-  Season = c(all_goal_difference_data$Season,
-             all_goal_difference_data$Season),
-  Team = c(rep("Home", nrow(all_goal_difference_data)),
-           rep("Away", nrow(all_goal_difference_data))),
-  Goals = c(all_goal_difference_data$`Home Goals`,
-            all_goal_difference_data$`Away Goals`)
+  Season = c(
+    all_goal_difference_data$Season,
+    all_goal_difference_data$Season
+  ),
+  Team = c(
+    rep("Home", nrow(all_goal_difference_data)),
+    rep("Away", nrow(all_goal_difference_data))
+  ),
+  Goals = c(
+    all_goal_difference_data$`Home Goals`,
+    all_goal_difference_data$`Away Goals`
+  )
 )
 
 # Calculate average goals by season and team type
