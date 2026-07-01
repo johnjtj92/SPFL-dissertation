@@ -197,8 +197,6 @@ ll_home
 # Likelihood ratio test.
 # This compares the simpler no-home-advantage model
 # against the model containing the HomeAdvantage parameter.
-# This part was aided by Chatgpt 
-# except the LRT <- max(0,LRT) as I noticed one of the outputs was negative
 
 LRT <- 2 * (ll_home - ll_no_home)
 
