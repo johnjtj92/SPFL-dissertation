@@ -23,24 +23,33 @@ The aim is to conduct a preliminary statistical investigation into home advantag
 # Load packages and datasets
 
 ```{r load-packages-data}
+# Load the packages required for importing Excel files, data manipulation,
+# and producing plots.
 library(readxl)
 library(dplyr)
 library(ggplot2)
 
-# Load one season but keep all columns
+# Define a function to load one season of SPFL data.
+# The function reads an Excel file, optionally from a specified sheet,
+# and adds a Season column so that each dataset can be identified later.
 load_season <- function(file, season, sheet = NULL) {
   
+  # If no sheet name is supplied, read the first sheet in the Excel file.
   if (is.null(sheet)) {
     data <- read_excel(file)
   } else {
+    # If a sheet name is supplied, read that specific sheet.
     data <- read_excel(file, sheet = sheet)
   }
   
+  # Add a Season column to the dataset.
   data %>%
     mutate(Season = season)
 }
 
-# Load each season
+# Load each individual SPFL Premiership season dataset.
+# The sheet argument is included where the relevant Excel file contains
+# a named worksheet that needs to be specified.
 spfl_2016_2017 <- load_season("SPFL 2016-2017.xlsx", "2016/17", "SPFL 2016-2017")
 spfl_2017_2018 <- load_season("SPFL 2017-2018.xlsx", "2017/18", "SPFL 2017-2018")
 spfl_2018_2019 <- load_season("SPFL 2018-2019.xlsx", "2018/19", "SPFL 2018-2019")
@@ -52,7 +61,8 @@ spfl_2023_2024 <- load_season("SPFL 2023-2024.xlsx", "2023/24")
 spfl_2024_2025 <- load_season("SPFL 2024-2025.xlsx", "2024/25")
 spfl_2025_2026 <- load_season("SPFL 2025-2026.xlsx", "2025/26", "SPFL Dataset")
 
-# Put all seasons into one list
+# Store all ten season datasets in a named list.
+# This makes it easier to apply the same analysis to each season separately.
 season_list <- list(
   "2016/17" = spfl_2016_2017,
   "2017/18" = spfl_2017_2018,
@@ -171,7 +181,8 @@ ggplot(spfl, aes(x = Result)) +
 ```
 
 ```{r match-outcomes-all-seasons, message=FALSE, warning=FALSE}
-# Combine only the columns needed for this plot
+# Combine the Season and Result columns from each individual season dataset.
+# Only these two columns are needed for the match outcome distribution plot.
 all_seasons_results <- bind_rows(
   spfl_2016_2017 %>% select(Season, Result),
   spfl_2017_2018 %>% select(Season, Result),
@@ -185,12 +196,18 @@ all_seasons_results <- bind_rows(
   spfl_2025_2026 %>% select(Season, Result)
 )
 
-# Count Home, Away and Draw results for every season
+# Count the number of home wins, draws and away wins in each season.
 match_outcomes_by_season <- all_seasons_results %>%
+  
+  # Keep only valid match result categories.
   filter(Result %in% c("Home", "Away", "Draw")) %>%
+  
+  # Set the order in which match results should appear in the plot.
   mutate(
     Result = factor(Result, levels = c("Home", "Draw", "Away"))
   ) %>%
+  
+  # Group by season and match outcome, then count the number of matches.
   group_by(Season, Result) %>%
   summarise(
     NumberOfMatches = n(),
@@ -212,16 +229,22 @@ ggplot(match_outcomes_by_season,
     fill = "Match result"
   )
 
+# Produce a faceted bar chart showing the distribution of match outcomes
+# separately for each SPFL Premiership season.
 ggplot(match_outcomes_by_season,
        aes(x = Result,
            y = NumberOfMatches,
            fill = Result)) +
   geom_col() +
+  
+  # Add the match count above each bar.
   geom_text(
     aes(label = NumberOfMatches),
     vjust = -0.3,
     size = 3
   ) +
+  
+  # Create a separate panel for each season.
   facet_wrap(~ Season) +
   labs(
     title = "Distribution of Match Outcomes by Season",
@@ -354,6 +377,8 @@ ggplot(home_goal_difference_all_seasons,
 ### Visualisation of average home and away goals
 
 ```{r home-away-goals-plot}
+# Calculate the average number of goals scored by home and away teams.
+# na.rm = TRUE ensures that any missing goal values are ignored.
 average_goals <- data.frame(
   Team = c("Home", "Away"),
   Goals = c(
@@ -362,6 +387,8 @@ average_goals <- data.frame(
   )
 )
 
+# Produce a bar chart comparing the average goals scored
+# by home teams and away teams.
 ggplot(average_goals, aes(x = Team, y = Goals)) +
   geom_col() +
   labs(
@@ -438,12 +465,20 @@ ggplot(average_goals_all_seasons,
 ```
 
 ```{r goals-violin-all-seasons, message=FALSE, warning=FALSE, fig.width=11, fig.height=7}
+# Produce a violin plot showing the distribution of goals scored
+# by home and away teams across all seasons.
 ggplot(average_goals_all_seasons,
        aes(x = Team,
            y = Goals,
            fill = Team)) +
+  
+  # Add violin plots to show the spread and density of goals scored.
   geom_violin(trim = FALSE, alpha = 0.7) +
+  
+  # Add boxplots inside the violins to show the median and interquartile range.
   geom_boxplot(width = 0.12, outlier.size = 1) +
+  
+  # Add a black diamond to show the mean number of goals scored.
   stat_summary(
     fun = mean,
     geom = "point",
@@ -451,7 +486,11 @@ ggplot(average_goals_all_seasons,
     size = 3,
     colour = "black"
   ) +
+  
+  # Create a separate panel for each season.
   facet_wrap(~ Season, ncol = 4) +
+  
+  # Add plot labels.
   labs(
     title = "Distribution of Goals Scored by Home and Away Teams",
     subtitle = "SPFL Premiership seasons 2016/17 to 2025/26",
@@ -486,11 +525,18 @@ The mean home-win attendance was approximately 22,724.46, while the mean away-wi
 ### Visualisation of attendance by match result
 
 ```{r attendance-result-plot}
+# Produce a boxplot showing how attendance varies across match outcomes.
+# This compares the distribution of attendances for home wins, draws and away wins.
 ggplot(spfl, aes(x = Result, y = Attendance)) +
+  
+  # Add boxplots to show the median, interquartile range and possible outliers
+  # in attendance for each match result category.
   geom_boxplot() +
+  
+  # Add plot labels.
   labs(
     title = "Attendance by Match Result",
-    x = "Match Result",
+    x = "Match result",
     y = "Attendance"
   )
 ```
@@ -542,16 +588,25 @@ ggplot(spfl, aes(x = `Percent Capacity`)) +
 A logistic regression model was fitted because `HomeWin` is a binary response variable. The generalised linear model keeps predicted probabilities between 0 and 1.
 
 ```{r create-homewin}
+# Create a binary outcome variable for whether the home team won.
+# Home wins are coded as 1, while away wins and draws are coded as 0.
+# Any missing or unexpected result values are coded as NA.
 spfl$HomeWin <- ifelse(spfl$Result == "Home", 1,
                        ifelse(spfl$Result %in% c("Away", "Draw"), 0, NA))
-
 ```
 
 ```{r logistic-regression}
-logit_model <- glm(HomeWin ~ `Percent Capacity` + `Travel Distance for Away Team`,
-                   data = spfl,
-                   family = "binomial")
+# Fit a logistic regression model to examine whether percentage capacity
+# and away-team travel distance are associated with the probability
+# of a home win.
+logit_model <- glm(
+  HomeWin ~ `Percent Capacity` + `Travel Distance for Away Team`,
+  data = spfl,
+  family = "binomial"
+)
 
+# Display the model output, including coefficient estimates,
+# standard errors, z-values and p-values.
 summary(logit_model)
 ```
 
@@ -573,15 +628,28 @@ ggplot(spfl, aes(x = `Percent Capacity`, y = HomeWin)) +
 ```
 
 ### Visualisation of travel distance and home wins
-
 ```{r distance-homewin-plot}
+# Produce a plot showing the relationship between away-team travel distance
+# and whether the home team won the match.
 ggplot(spfl, aes(x = `Travel Distance for Away Team`, y = HomeWin)) +
+  
+  # Add jittered points so that overlapping 0 and 1 values are easier to see.
+  # HomeWin is binary, where 1 indicates a home win and 0 indicates no home win.
   geom_jitter(height = 0.05) +
-  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE) +
+  
+  # Add a logistic regression trend line because the response variable,
+  # HomeWin, is binary.
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = "binomial"),
+    se = FALSE
+  ) +
+  
+  # Add plot labels.
   labs(
     title = "Travel Distance and Home Wins",
-    x = "Travel Distance for Away Team",
-    y = "Home Win: 1 = Yes, 0 = No"
+    x = "Travel distance for away team",
+    y = "Home win: 1 = Yes, 0 = No"
   )
 ```
 
@@ -632,7 +700,7 @@ yellow_card_table
 ```
 
 ```{r combined-yellow-card-table-covid}
-```{r combined-yellow-card-table-covid}
+
 # Reload full 2020/21 dataset because yellow-card columns are needed
 spfl_2020_full <- read_excel("SPFL 2020-2021.xlsx", sheet = "SPFL 2020-2021")
 
@@ -667,44 +735,63 @@ yellow_card_table_covid
 ### Visualisation of yellow cards
 
 ```{r yellow-card-barplot-covid, message=FALSE, warning=FALSE}
-# Reload the full 2020/21 dataset because yellow-card columns are needed
+# Reload the full 2020/21 dataset because the yellow-card columns
+# are required for this analysis.
 spfl_2020_full <- read_excel("SPFL 2020-2021.xlsx", sheet = "SPFL 2020-2021")
 
+# Define the possible yellow-card values to be displayed on the plot.
+# This ensures that all values from 0 to 7 appear, even if some have zero counts.
+# Most yellow cards in a single game was 7
 yellow_values_covid <- 0:7
 
+# Count how many matches had each number of home-team yellow cards.
 home_yellows_covid <- table(
   factor(spfl_2020_full$`Home Yellow cards`, levels = yellow_values_covid)
 )
 
+# Count how many matches had each number of away-team yellow cards.
 away_yellows_covid <- table(
   factor(spfl_2020_full$`Away Yellow cards`, levels = yellow_values_covid)
 )
 
+# Produce a grouped bar chart comparing the distribution of yellow cards
+# for home and away teams during the 2020/21 season.
 barplot(
   rbind(home_yellows_covid, away_yellows_covid),
   beside = TRUE,
   legend.text = c("Home", "Away"),
   col = c("steelblue", "orange"),
   main = "Distribution of Yellow Cards for Home and Away Teams: 2020/21",
-  xlab = "Number of Yellow Cards",
-  ylab = "Number of Matches"
+  xlab = "Number of yellow cards",
+  ylab = "Number of matches"
 )
 ```
 
 ```{r yellow-card-barplot}
-yellow_values <- 0:7
+# Define the possible yellow-card values to be displayed on the plot.
+# This keeps the x-axis consistent, including values with zero matches.
+yellow_values <- 0:8
 
-home_yellows <- table(factor(spfl$`Home Yellow cards`, levels = yellow_values))
-away_yellows <- table(factor(spfl$`Away Yellow cards`, levels = yellow_values))
+# Count how many 2025/26 matches had each number of home-team yellow cards.
+home_yellows <- table(
+  factor(spfl$`Home Yellow cards`, levels = yellow_values)
+)
 
+# Count how many 2025/26 matches had each number of away-team yellow cards.
+away_yellows <- table(
+  factor(spfl$`Away Yellow cards`, levels = yellow_values)
+)
+
+# Produce a grouped bar chart comparing the distribution of yellow cards
+# for home and away teams during the 2025/26 season.
 barplot(
   rbind(home_yellows, away_yellows),
   beside = TRUE,
   legend.text = c("Home", "Away"),
   col = c("steelblue", "orange"),
-  main = "Distribution of Yellow Cards for Home and Away Teams for 2025-26",
-  xlab = "Number of Yellow Cards",
-  ylab = "Number of Matches"
+  main = "Distribution of Yellow Cards for Home and Away Teams: 2025/26",
+  xlab = "Number of yellow cards",
+  ylab = "Number of matches"
 )
 ```
 
@@ -1242,10 +1329,13 @@ ggplot(spfl, aes(x = BigClub, y = AwayTotalCards)) +
 # Key Match incident(KMI) data for 2024-25, 2025-26
 
 ```{r kmi-team-group-comparison, message=FALSE, warning=FALSE}
+# Load packages needed for data manipulation and plotting.
 library(dplyr)
 library(ggplot2)
 
-# 2024/25 Key Match Incident data
+# Create a dataset of incorrect Key Match Incident decisions for 2024/25.
+# DecisionsFor records incorrect decisions that benefited each team.
+# DecisionsAgainst records incorrect decisions that went against each team.
 kmi_2024_2025 <- data.frame(
   Season = "2024/25",
   Team = c("Celtic", "Rangers", "Hibernian", "Dundee United",
@@ -1255,7 +1345,7 @@ kmi_2024_2025 <- data.frame(
   DecisionsAgainst = c(2, 5, 0, 2, 1, 5, 4, 3, 4, 0, 2, 0)
 )
 
-# 2025/26 KMI data
+# Create the equivalent KMI dataset for 2025/26.
 kmi_2025_2026 <- data.frame(
   Season = "2025/26",
   Team = c("Celtic", "Hearts", "Rangers", "Motherwell",
@@ -1265,15 +1355,15 @@ kmi_2025_2026 <- data.frame(
   DecisionsAgainst = c(1, 1, 3, 4, 1, 0, 1, 1, 1, 0, 3, 1)
 )
 
-# Combine both seasons into a single dataset
+# Combine both seasons into one dataset so that the KMI data
+# can be analysed across the two seasons together.
 kmi_all <- bind_rows(kmi_2024_2025, kmi_2025_2026)
-
-
-# KMI for every team
+```
 
 ```{r kmi-all-teams-table}
-kmi_all <- bind_rows(kmi_2024_2025, kmi_2025_2026)
-
+# Summarise the combined KMI data by team.
+# This gives the total number of incorrect decisions for and against
+# each team across the 2024/25 and 2025/26 seasons.
 kmi_all_teams <- kmi_all %>%
   group_by(Team) %>%
   summarise(
@@ -1282,23 +1372,36 @@ kmi_all_teams <- kmi_all %>%
     NetDifferential = TotalFor - TotalAgainst,
     .groups = "drop"
   ) %>%
+  
+  # Order teams from the highest to lowest net differential.
   arrange(desc(NetDifferential))
 
+# Display the team-level summary table.
 kmi_all_teams
 
+# Carry out a chi-squared goodness-of-fit test on the distribution
+# of incorrect decisions against teams.
 chisq.test(kmi_all_teams$TotalAgainst)
 ```
 
 ```{r kmi-all-teams-plot}
+# Produce a bar chart showing the net differential of incorrect KMI decisions
+# for each team across the combined 2024/25 and 2025/26 data.
 ggplot(kmi_all_teams,
        aes(x = reorder(Team, NetDifferential),
            y = NetDifferential)) +
+  
+  # Add bars representing each team's net differential.
   geom_col() +
+  
+  # Flip the axes so that team names are easier to read.
   coord_flip() +
+  
+  # Add plot labels.
   labs(
     title = "Net Differential of Incorrect KMI Decisions by Team",
     x = "Team",
-    y = "Net Differential: Decisions For - Decisions Against"
+    y = "Net differential: decisions for - decisions against"
   )
 ```
 
@@ -1348,7 +1451,9 @@ team_tests
 ```
 
 ```{r kmi-binomial-tests}
-# Create team totals
+# Create team-level totals from the combined KMI dataset.
+# This calculates the total number of incorrect decisions for and against
+# each team across the two seasons.
 kmi_all_teams <- kmi_all %>%
   group_by(Team) %>%
   summarise(
@@ -1359,11 +1464,17 @@ kmi_all_teams <- kmi_all %>%
     .groups = "drop"
   )
 
-# Binomial test for each team
-# Tests whether decisions against differ from 50% of all decisions
+# Carry out an exact binomial test for each team.
+# The test checks whether the proportion of incorrect decisions against
+# a team differs significantly from 50% of all incorrect decisions involving
+# that team.
 kmi_binomial_tests <- kmi_all_teams %>%
   rowwise() %>%
   mutate(
+    
+    # TotalAgainst is treated as the number of "successes",
+    # while TotalDecisions is the total number of incorrect decisions
+    # for and against that team.
     PValue = binom.test(
       x = TotalAgainst,
       n = TotalDecisions,
@@ -1372,11 +1483,17 @@ kmi_binomial_tests <- kmi_all_teams %>%
     )$p.value
   ) %>%
   ungroup() %>%
+  
+  # Adjust the p-values using the Holm method to account for
+  # multiple team-level tests.
   mutate(
     AdjustedPValue = p.adjust(PValue, method = "holm")
   ) %>%
+  
+  # Order the results from smallest to largest unadjusted p-value.
   arrange(PValue)
 
+# Display the binomial test results.
 kmi_binomial_tests
 ```
 
