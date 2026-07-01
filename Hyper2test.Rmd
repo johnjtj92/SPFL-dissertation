@@ -126,8 +126,7 @@ H_home <- hyper2(pnames = c(teams, "HomeAdvantage"))
 # 1 with and 1 without a home advantage component 
 # using the formulae provided by hyper2 (so in this case, home/home+away)
 # and home + homeadv/ home+homeadv+away)"
-# Using addition variant and not multiplication for simplicity
-# Note: Ask Robin whether to stick with addition or change to multiplication
+# Using addition variant and not multiplication for simplicity - confirmed from supervisor
 for (i in 1:nrow(spfl_decided)) {
   
   home <- spfl_decided$`Home Team`[i]
