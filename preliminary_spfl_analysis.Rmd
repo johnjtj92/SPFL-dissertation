@@ -507,6 +507,78 @@ ggplot(average_goals_all_seasons,
   )
 ```
 
+```{r goal-distribution-bar-plot, message=FALSE, warning=FALSE}
+
+# This code creates a bar plot showing the distribution of goals scored
+# by home and away teams across each Scottish Premiership season.
+
+# First, create a new dataset where home goals and away goals are placed
+# into one single column called "Goals".
+# This makes the data easier to plot using ggplot.
+goals_distribution <- data.frame(
+  
+  # Repeat the season column twice: once for home goals and once for away goals
+  Season = c(all_goal_difference_data$Season,
+             all_goal_difference_data$Season),
+  
+  # Create a variable showing whether the goals were scored by the home or away team
+  Team = c(rep("Home", nrow(all_goal_difference_data)),
+           rep("Away", nrow(all_goal_difference_data))),
+  
+  # Combine the home goals and away goals into one column
+  Goals = c(all_goal_difference_data$`Home Goals`,
+            all_goal_difference_data$`Away Goals`)
+)
+
+# Count how many times each number of goals was scored by home and away teams
+# in each season.
+goals_count <- goals_distribution %>%
+  
+  # Group the data by season, team type, and number of goals scored
+  group_by(Season, Team, Goals) %>%
+  
+  # Count the number of matches in each group
+  summarise(Count = n(), .groups = "drop") %>%
+  
+  # Group again by season and team so percentages are calculated separately
+  # for home and away teams within each season
+  group_by(Season, Team) %>%
+  
+  # Convert the raw counts into percentages of matches
+  mutate(Percentage = Count / sum(Count) * 100)
+
+# Create a bar plot showing the percentage distribution of goals scored
+# by home and away teams for each season.
+ggplot(goals_count, aes(x = factor(Goals, levels = 0:9),
+                        y = Percentage,
+                        fill = Team)) +
+  
+  # Create bars using the percentage values already calculated above.
+  # position = "dodge" places the home and away bars side by side.
+  geom_bar(stat = "identity", position = "dodge") +
+  
+  # Split the plot into separate panels for each season.
+  # ncol = 5 gives two rows of five seasons.
+  facet_wrap(~ Season, ncol = 5) +
+  
+  # Keep the x-axis goal values from 0 to 9 visible across all panels,
+  # even if some goal totals do not occur in a particular season.
+  scale_x_discrete(drop = FALSE) +
+  
+  # Add the title, subtitle, axis labels, and legend title.
+  labs(
+    title = "Distribution of Goals Scored by Home and Away Teams",
+    subtitle = "SPFL Premiership seasons 2016/17 to 2025/26",
+    x = "Number of goals scored",
+    y = "Percentage of matches",
+    fill = "Team"
+  ) +
+  
+  # Use a simple, clean theme for the plot.
+  theme_minimal()
+
+```
+
 # Attendance and match outcome
 
 ## Attendance in home wins compared with away wins
@@ -615,11 +687,16 @@ logit_model <- glm(
 # Display the model output, including coefficient estimates,
 # standard errors, z-values and p-values.
 summary(logit_model)
+
+# Show one-sided p-values
+pnorm(
+  summary(logit_model)$coefficients[, "z value"],
+  lower.tail = FALSE
+)
+
 ```
 
-Percent capacity had a positive coefficient, with p = 0.0498. Since this is only just below the 5% significance level, it should be interpreted cautiously as borderline evidence that higher percent capacity was associated with increased odds of a home win.
-
-Travel distance was also positive, with beta = 0.00556, but was not statistically significant at the 5% level, p = 0.0936.
+One-sided hypothesis tests were used because the analysis tested the directional hypotheses that greater percentage capacity and greater away-team travel distance would increase the probability of a home win.
 
 ### Visualisation of percent capacity and home wins
 
