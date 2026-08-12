@@ -84,7 +84,7 @@ The object `spfl_decided` controls which season is analysed. To analyse a differ
 # Keep only matches with a winner.
 # Draws are excluded because this Bradley-Terry style model compares winners and losers.
 
-spfl_decided <- all_matches %>%
+spfl_decided <- spfl_2020_2021 %>%
   filter(Result %in% c("Home", "Away"))
 
 # Get all team names in the selected dataset.

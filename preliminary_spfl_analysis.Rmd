@@ -579,6 +579,56 @@ ggplot(goals_count, aes(x = factor(Goals, levels = 0:9),
 
 ```
 
+```{r goal-distribution-cumu-plot, message=FALSE, warning=FALSE}
+# Get season names
+seasons <- unique(all_goal_difference_data$Season)
+
+# Create a different colour for each season
+cols <- rainbow(length(seasons))
+
+# Leave some extra room on the right for the legend
+par(pty = "s", mar = c(5, 5, 4, 8))
+
+# Create empty plot
+plot(0, 0,
+     type = "n",
+     asp = 1,
+     xlim = c(0, 400),
+     ylim = c(0, 400),
+     xlab = "Cumulative home goals",
+     ylab = "Cumulative away goals",
+     main = "Cumulative Home and Away Goals")
+
+# Equality line
+abline(0, 1, lty = 2)
+
+# Plot each season
+for (i in seq_along(seasons)) {
+  
+  season_data <- all_goal_difference_data[
+    all_goal_difference_data$Season == seasons[i], ]
+  
+  home <- season_data$`Home Goals`
+  away <- season_data$`Away Goals`
+  
+  lines(cumsum(home),
+        cumsum(away),
+        col = cols[i],
+        lwd = 2)
+}
+
+# Put legend outside the graph
+legend("topright",
+       inset = c(-0.35, 0),
+       xpd = TRUE,
+       legend = seasons,
+       col = cols,
+       lty = 1,
+       lwd = 2,
+       cex = 0.7,
+       bty = "n")
+```
+
 # Attendance and match outcome
 
 ## Attendance in home wins compared with away wins
@@ -879,7 +929,7 @@ barplot(
 )
 ```
 
-```{r yellow-card-reverse-cumulative-diagram, message=FALSE, warning=FALSE}
+```{r yellow-card-table, message=FALSE, warning=FALSE}
 yellow_values <- 0:max(
   spfl$`Home Yellow cards`,
   spfl$`Away Yellow cards`,
@@ -896,39 +946,6 @@ yellow_card_table <- data.frame(
 
 yellow_card_table
 
-# Reverse cumulative totals:
-# number of matches with at least this many yellow cards
-yellow_reverse_cumulative <- yellow_card_table %>%
-  arrange(desc(YellowCards)) %>%
-  mutate(
-    HomeAtLeast = cumsum(Home),
-    AwayAtLeast = cumsum(Away)
-  ) %>%
-  arrange(YellowCards)
-
-yellow_reverse_cumulative
-
-yellow_reverse_long <- data.frame(
-  YellowCards = rep(yellow_reverse_cumulative$YellowCards, 2),
-  Team = c(rep("Home", nrow(yellow_reverse_cumulative)),
-           rep("Away", nrow(yellow_reverse_cumulative))),
-  MatchesAtLeast = c(yellow_reverse_cumulative$HomeAtLeast,
-                     yellow_reverse_cumulative$AwayAtLeast)
-)
-
-ggplot(yellow_reverse_long,
-       aes(x = YellowCards,
-           y = MatchesAtLeast,
-           group = Team,
-           linetype = Team)) +
-  geom_line() +
-  geom_point() +
-  labs(
-    title = "Reverse Cumulative Distribution of Yellow Cards",
-    x = "Number of yellow cards",
-    y = "Number of matches with at least this many yellow cards",
-    linetype = "Team"
-  )
 ```
 
 ## Red cards
@@ -1489,50 +1506,6 @@ ggplot(kmi_all_teams,
   )
 ```
 
-```{r kmi-team-against-fisher-tests}
-team_tests <- data.frame()
-
-for (team_name in kmi_all_teams$Team) {
-  
-  team_for <- kmi_all_teams$TotalFor[kmi_all_teams$Team == team_name]
-  team_against <- kmi_all_teams$TotalAgainst[kmi_all_teams$Team == team_name]
-  
-  other_for <- sum(kmi_all_teams$TotalFor[kmi_all_teams$Team != team_name])
-  other_against <- sum(kmi_all_teams$TotalAgainst[kmi_all_teams$Team != team_name])
-  
-  test_table <- matrix(
-    c(team_against, team_for,
-      other_against, other_for),
-    nrow = 2,
-    byrow = TRUE
-  )
-  
-  rownames(test_table) <- c(team_name, "Other teams")
-  colnames(test_table) <- c("Against", "For")
-  
-  test <- fisher.test(test_table, alternative = "greater")
-  
-  team_tests <- rbind(
-    team_tests,
-    data.frame(
-      Team = team_name,
-      TotalFor = team_for,
-      TotalAgainst = team_against,
-      NetDifferential = team_for - team_against,
-      PValue = test$p.value
-    )
-  )
-}
-
-# Adjust p-values because several teams are tested
-team_tests <- team_tests %>%
-  mutate(
-    AdjustedPValue = p.adjust(PValue, method = "holm")
-  ) %>%
-  arrange(PValue)
-
-team_tests
-```
 
 ```{r kmi-binomial-tests}
 # Create team-level totals from the combined KMI dataset.
@@ -1579,51 +1552,6 @@ kmi_binomial_tests <- kmi_all_teams %>%
 
 # Display the binomial test results.
 kmi_binomial_tests
-```
-
-```{r kmi-binomial-tests-more-against}
-kmi_binomial_against_tests <- kmi_all_teams %>%
-  rowwise() %>%
-  mutate(
-    PValue = binom.test(
-      x = TotalAgainst,
-      n = TotalDecisions,
-      p = 0.5,
-      alternative = "greater"
-    )$p.value
-  ) %>%
-  ungroup() %>%
-  mutate(
-    AdjustedPValue = p.adjust(PValue, method = "holm")
-  ) %>%
-  arrange(PValue)
-
-kmi_binomial_against_tests
-```
-
-# Additional visuals/tests
-
-### Q-Q plot for yellow-card differences
-
-```{r yellow-card-qq-plot}
-# Difference in yellow cards: away minus home
-spfl$YellowCardDifference <- spfl$`Away Yellow cards` - spfl$`Home Yellow cards`
-
-# Q-Q plot
-qqnorm(spfl$YellowCardDifference,
-       main = "Q-Q Plot of Yellow Card Differences")
-
-qqline(spfl$YellowCardDifference)
-```
-
-
-### Wilcoxon signed-rank test for yellow cards
-
-```{r yellow-card-wilcox}
-wilcox.test(spfl$`Away Yellow cards`,
-            spfl$`Home Yellow cards`,
-            paired = TRUE,
-            alternative = "greater")
 ```
 
 
