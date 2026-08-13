@@ -584,7 +584,8 @@ ggplot(goals_count, aes(x = factor(Goals, levels = 0:9),
 seasons <- unique(all_goal_difference_data$Season)
 
 # Create a different colour for each season
-cols <- rainbow(length(seasons))
+cols <- c("red", "orange", "gold", "darkgreen", "turquoise4",
+          "deepskyblue", "blue", "purple", "black", "magenta")
 
 # Leave some extra room on the right for the legend
 par(pty = "s", mar = c(5, 5, 4, 8))

@@ -84,7 +84,7 @@ The object `spfl_decided` controls which season is analysed. To analyse a differ
 # Keep only matches with a winner.
 # Draws are excluded because this Bradley-Terry style model compares winners and losers.
 
-spfl_decided <- spfl_2020_2021 %>%
+spfl_decided <- spfl_2025_2026 %>%
   filter(Result %in% c("Home", "Away"))
 
 # Get all team names in the selected dataset.
@@ -403,19 +403,35 @@ The results show that 2019/20 and every season from 2021/22 to 2025/26 had stati
 # Does champion dominance affect home advantage parameter?
 
 ```{r hyper2-home-advantage-dotchart, message=FALSE, warning=FALSE}
-# Produce a dot chart of HomeAdvantage estimates by season.
+# Put seasons into chronological order
+hyper2_season_table$Season <- factor(
+  hyper2_season_table$Season,
+  levels = c(
+    "2016/17",
+    "2017/18",
+    "2018/19",
+    "2019/20",
+    "2020/21",
+    "2021/22",
+    "2022/23",
+    "2023/24",
+    "2024/25",
+    "2025/26"
+  )
+)
+
+# Produce a dot chart of HomeAdvantage estimates by season
 # This provides another way to compare the estimated strength of home advantage
 # across seasons.
 ggplot(hyper2_season_table,
        aes(x = HomeAdvantageEstimate,
-           y = reorder(Season, HomeAdvantageEstimate))) +
+           y = Season)) +
   geom_point(size = 3) +
   labs(
     title = "Estimated Home Advantage by Season",
-    x = "HomeAdvantage estimate",
+    x = "Home Advantage estimate",
     y = "Season"
   )
-
 # Display the summary table again so that it can be viewed alongside the plot.
 hyper2_summary_table
 
