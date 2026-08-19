@@ -244,6 +244,11 @@ ggplot(match_outcomes_by_season,
     size = 3
   ) +
   
+  # Add extra space above the bars so the labels are not cut off.
+  scale_y_continuous(
+    limits = c(0, max(match_outcomes_by_season$NumberOfMatches) * 1.15)
+  ) +
+  
   # Create a separate panel for each season.
   facet_wrap(~ Season) +
   labs(
