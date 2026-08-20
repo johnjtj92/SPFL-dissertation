@@ -724,10 +724,6 @@ kmi_all_teams <- kmi_all %>%
 
 # Display the team-level summary table.
 kmi_all_teams
-
-# Carry out a chi-squared goodness-of-fit test on the distribution
-# of incorrect decisions against teams.
-chisq.test(kmi_all_teams$TotalAgainst)
 ```
 
 ```{r kmi-all-teams-plot}
